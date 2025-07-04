@@ -98,55 +98,6 @@ Example format:
         
         return items
     
-    async def generate_loot(self, source: str, source_level: int, 
-                          location: str, context: str = "") -> List[Item]:
-        """Generate loot drops from a defeated enemy or found treasure"""
-        
-        location_mods = self.rules.get('location_modifiers', {}).get(location, {})
-        
-        prompt = f"""Generate loot from: {source} (level {source_level})
-Location: {location}
-Context: {context}
-Item condition: {location_mods.get('item_condition', 'Normal')}
-
-Create 1-4 items that tell a story about the source.
-Higher level sources should have better/more items.
-Include gold as one "item" (5-50 gold × level).
-
-Return JSON list with same format as before, but make items feel like authentic loot from this source."""
-        
-        response = await self._generate_json(prompt)
-        items = []
-        
-        try:
-            item_list = json.loads(response) if isinstance(response, str) else response
-            
-            for item_data in item_list:
-                if item_data['name'].lower() == 'gold' or 'gold' in item_data['type']:
-                    # Handle gold separately
-                    continue
-                    
-                properties = await self._generate_item_properties(
-                    item_data['type'],
-                    item_data['name'],
-                    item_data.get('description', ''),
-                    item_data['value'],
-                    source_level
-                )
-                
-                item = Item(
-                    name=item_data['name'],
-                    description=item_data.get('description', ''),
-                    item_type=item_data['type'],
-                    properties=properties,
-                    quantity=item_data.get('quantity', 1)
-                )
-                items.append(item)
-                
-        except Exception as e:
-            logger.warning(f"Failed to parse loot: {e}")
-            
-        return items
     
     async def _generate_item_properties(self, item_type: str, name: str, 
                                       description: str, value: int, 

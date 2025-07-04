@@ -2,15 +2,10 @@ import random
 import re
 from typing import Tuple, List, Optional, Dict, NamedTuple
 from dataclasses import dataclass, field
-from enum import Enum
-import logging
 from queue import Queue
 
 from character import Character, PlayerCharacter, NPCCharacter, CharacterClass
 
-# Set up logger for dice rolls
-logger = logging.getLogger("dice-rolls")
-logger.setLevel(logging.INFO)
 
 from utils.display import Colors
 
