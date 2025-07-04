@@ -1,4 +1,5 @@
 import logging
+import json
 from typing import List
 from livekit.agents.voice import Agent
 from livekit.agents.llm import ChatContext
@@ -76,3 +77,35 @@ class BaseGameAgent(Agent):
         if userdata.combat_state and not userdata.combat_state.is_complete:
             return [c for c in userdata.combat_state.participants if isinstance(c, NPCCharacter)]
         return []
+    
+    async def emit_state_update(self, update_type: str, data: dict = None) -> None:
+        """Emit a state update to all connected clients via RPC"""
+        from core.game_state import GameUserData
+        userdata: GameUserData = self.session.userdata
+        
+        if not userdata.ctx or not userdata.ctx.room:
+            logger.warning("Cannot emit state update: no room context")
+            return
+            
+        payload = {
+            "type": update_type,
+            "data": data or {}
+        }
+        
+        try:
+            room = userdata.ctx.room
+            remote_participants = list(room.remote_participants.values())
+            
+            for participant in remote_participants:
+                try:
+                    await room.local_participant.perform_rpc(
+                        destination_identity=participant.identity,
+                        method="game_state_update",
+                        payload=json.dumps(payload)
+                    )
+                    logger.debug(f"Emitted {update_type} update to {participant.identity}")
+                except Exception as e:
+                    logger.error(f"Failed to emit update to {participant.identity}: {e}")
+                    
+        except Exception as e:
+            logger.error(f"Failed to emit state update: {e}")

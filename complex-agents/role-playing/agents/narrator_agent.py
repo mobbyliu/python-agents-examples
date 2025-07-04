@@ -93,6 +93,9 @@ class NarratorAgent(BaseGameAgent):
         
         for item in starting_gear[chosen_class]:
             userdata.player_character.add_item(item)
+            # Auto-equip weapons and armor
+            if item.item_type in ["weapon", "armor"]:
+                userdata.player_character.equip_item(item.name)
         
         # Add universal starting items
         userdata.player_character.add_item(Item("healing potion", "Restores health", "consumable", {"healing": "2d4+2"}, 2))

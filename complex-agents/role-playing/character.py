@@ -54,26 +54,35 @@ class Character:
     def __post_init__(self):
         # Calculate derived stats
         self.initiative_bonus = self.stats.get_modifier("dexterity")
-        self.armor_class = 10 + self.stats.get_modifier("dexterity")
+        
+        # Base values before equipment
+        self.base_armor_class = 10 + self.stats.get_modifier("dexterity")
+        self.base_damage_dice = "1d4"  # Unarmed strike
+        
+        # Set initial AC and damage (will be overridden by equipment for players)
+        self.armor_class = self.base_armor_class
+        self.damage_dice = self.base_damage_dice
         
         # Set class-based stats
         if self.character_class == CharacterClass.WARRIOR:
             self.max_health = 10 + self.stats.get_modifier("constitution")
             self.attack_bonus = 2 + self.stats.get_modifier("strength")
-            self.damage_dice = "1d8"
+            self.base_damage_dice = "1d6"  # Better unarmed for warriors
         elif self.character_class == CharacterClass.MAGE:
             self.max_health = 6 + self.stats.get_modifier("constitution")
             self.attack_bonus = self.stats.get_modifier("intelligence")
-            self.damage_dice = "1d4"
+            self.base_damage_dice = "1d4"
         elif self.character_class == CharacterClass.ROGUE:
             self.max_health = 8 + self.stats.get_modifier("constitution")
             self.attack_bonus = 2 + self.stats.get_modifier("dexterity")
-            self.damage_dice = "1d6"
+            self.base_damage_dice = "1d4"
         elif self.character_class == CharacterClass.CLERIC:
             self.max_health = 8 + self.stats.get_modifier("constitution")
             self.attack_bonus = 1 + self.stats.get_modifier("wisdom")
-            self.damage_dice = "1d6"
+            self.base_damage_dice = "1d4"
         
+        # Update damage dice to base value
+        self.damage_dice = self.base_damage_dice
         self.current_health = self.max_health
 
     def take_damage(self, damage: int) -> Tuple[int, bool]:
@@ -117,6 +126,34 @@ class PlayerCharacter(Character):
     equipped_weapon: Optional[Item] = None
     equipped_armor: Optional[Item] = None
     gold: int = 0
+    
+    def __post_init__(self):
+        super().__post_init__()
+        # Update stats based on starting equipment
+        self.update_equipment_stats()
+    
+    def update_equipment_stats(self):
+        """Update AC and damage based on equipped items"""
+        # Reset to base values
+        self.armor_class = self.base_armor_class
+        self.damage_dice = self.base_damage_dice
+        
+        # Apply armor bonuses
+        if self.equipped_armor:
+            if "armor_class" in self.equipped_armor.properties:
+                # Armor provides flat AC
+                self.armor_class = self.equipped_armor.properties["armor_class"]
+                # Add dexterity modifier if light armor
+                if self.equipped_armor.properties.get("armor_type", "light") == "light":
+                    self.armor_class += self.stats.get_modifier("dexterity")
+            elif "ac_bonus" in self.equipped_armor.properties:
+                # Armor provides bonus to base AC
+                self.armor_class = self.base_armor_class + self.equipped_armor.properties["ac_bonus"]
+        
+        # Apply weapon damage
+        if self.equipped_weapon:
+            if "damage" in self.equipped_weapon.properties:
+                self.damage_dice = self.equipped_weapon.properties["damage"]
 
     def add_item(self, item: Item):
         """Add item to inventory"""
@@ -141,25 +178,23 @@ class PlayerCharacter(Character):
     def equip_item(self, item_name: str) -> str:
         """Equip a weapon or armor"""
         for item in self.inventory:
-            if item.name == item_name:
+            if item.name.lower() == item_name.lower():
                 if item.item_type == "weapon":
                     if self.equipped_weapon:
                         self.inventory.append(self.equipped_weapon)
                     self.equipped_weapon = item
                     self.inventory.remove(item)
-                    # Update damage dice if weapon has custom damage
-                    if "damage" in item.properties:
-                        self.damage_dice = item.properties["damage"]
-                    return f"Equipped {item_name} as weapon"
+                    # Update all equipment-based stats
+                    self.update_equipment_stats()
+                    return f"Equipped {item_name} as weapon (damage: {self.damage_dice})"
                 elif item.item_type == "armor":
                     if self.equipped_armor:
                         self.inventory.append(self.equipped_armor)
                     self.equipped_armor = item
                     self.inventory.remove(item)
-                    # Update armor class if armor provides AC bonus
-                    if "ac_bonus" in item.properties:
-                        self.armor_class = 10 + self.stats.get_modifier("dexterity") + item.properties["ac_bonus"]
-                    return f"Equipped {item_name} as armor"
+                    # Update all equipment-based stats
+                    self.update_equipment_stats()
+                    return f"Equipped {item_name} as armor (AC: {self.armor_class})"
         return f"Cannot equip {item_name} - not found in inventory"
 
     def gain_experience(self, xp: int) -> Optional[str]:

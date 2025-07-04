@@ -1,9 +1,10 @@
 import random
 import re
-from typing import Tuple, List, Optional, Dict
+from typing import Tuple, List, Optional, Dict, NamedTuple
 from dataclasses import dataclass, field
 from enum import Enum
 import logging
+from queue import Queue
 
 from character import Character, PlayerCharacter, NPCCharacter, CharacterClass
 
@@ -12,6 +13,13 @@ logger = logging.getLogger("dice-rolls")
 logger.setLevel(logging.INFO)
 
 from utils.display import Colors
+
+
+class CombatAction(NamedTuple):
+    """Represents a combat action to be narrated"""
+    message: str
+    delay: float = 0.0  # Optional delay before speaking
+    priority: int = 0  # Higher priority actions go first (if needed)
 
 
 @dataclass
@@ -23,6 +31,7 @@ class CombatState:
     round_number: int = 1
     combat_log: List[str] = field(default_factory=list)
     is_complete: bool = False
+    action_queue: Queue[CombatAction] = field(default_factory=Queue)
     
     def get_current_character(self) -> Optional[Character]:
         """Get the character whose turn it is"""
