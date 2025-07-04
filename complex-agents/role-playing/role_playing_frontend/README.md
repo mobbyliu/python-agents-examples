@@ -2,7 +2,7 @@
 
 # Role-Playing Demo Frontend
 
-This Next.js application is the UI for the **Agents and Storms** role-playing demo. It connects to the Python agent backend via RPC to present a voice-first RPG interface, complete with dynamically updating character portraits, game status, chat, and voice interaction.
+This Next.js application is the UI for the **Agents and Storms** role-playing demo. It connects to the Python agent backend via RPC to present a voice-first RPG interface, complete with dynamically updating character portraits, game status, and voice interaction.
 
 ![App screenshot](./.github/assets/frontend-screenshot.jpeg)
 
@@ -49,7 +49,3 @@ Make sure your backend and frontend endpoints align.
 - `lib/` — Shared utilities and types
 - `public/portraits/` — Portrait images for NPCs and agents
 - `public/fonts/`, `postcss.config.js`, `tailwind.config.ts` — Styling and theming config
-
-## Contributing
-
-This demo is open source—feel free to open issues or PRs. Join us on the LiveKit Community Slack to discuss ideas and improvements.

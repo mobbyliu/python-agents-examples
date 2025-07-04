@@ -268,8 +268,6 @@ The game is designed for natural voice interaction:
 
 ## Technical Notes
 
-- The narrator uses a British accent for atmospheric storytelling
-- Combat agent speaks 10% faster for urgency
 - Both agents share chat context for continuity
 - State is preserved in UserData, not global variables
 - Agent switching is handled by returning the new agent instance
@@ -319,6 +317,4 @@ Built with:
 - LiveKit Agents framework
 - OpenAI for LLM
 - Deepgram for speech-to-text
-- Cartesia for text-to-speech
-
-Inspired by classic tabletop RPGs and the LiveKit agent examples.
+- Inworld for text-to-speech
