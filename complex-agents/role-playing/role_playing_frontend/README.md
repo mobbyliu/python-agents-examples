@@ -1,38 +1,55 @@
-<img src="./.github/assets/app-icon.png" alt="Voice Assistant App Icon" width="100" height="100">
+<img src="./.github/assets/app-icon.png" alt="Role-Playing Demo App Icon" width="100" height="100">
 
-# Web Voice Assistant
+# Role-Playing Demo Frontend
 
-This is a starter template for [LiveKit Agents](https://docs.livekit.io/agents) that provides a simple voice interface using the [LiveKit JavaScript SDK](https://github.com/livekit/client-sdk-js). It supports [voice](https://docs.livekit.io/agents/start/voice-ai), [transcriptions](https://docs.livekit.io/agents/build/text/), and [virtual avatars](https://docs.livekit.io/agents/integrations/avatar).
+This Next.js application is the UI for the **Agents and Storms** role-playing demo. It connects to the Python agent backend via RPC to present a voice-first RPG interface, complete with dynamically updating character portraits, game status, chat, and voice interaction.
 
-This template is built with Next.js and is free for you to use or modify as you see fit.
-s
-![App screenshot](/.github/assets/frontend-screenshot.jpeg)
+![App screenshot](./.github/assets/frontend-screenshot.jpeg)
 
-## Getting started
+## Features
 
-> [!TIP]
-> If you'd like to try this application without modification, you can deploy an instance in just a few clicks with [LiveKit Cloud Sandbox](https://cloud.livekit.io/projects/p_/sandbox/templates/voice-assistant-frontend).
+- **Character Portraits**: Portrait updates via RPC to reflect the current speaker (NPC or agent).
+- **Game Status**: Displays health, inventory, equipped items, and combat turn queue.
+- **Voice Chat & Transcription**: Speak commands and see live transcription of both user and agent voices.
+- **Agent Video/Audio**: Show avatar video stream or audio visualizer depending on agent state.
+- **Reactive UI**: Smooth animations handled by `framer-motion`.
 
-Run the following command to automatically clone this template.
+## Getting Started
+
+### Prerequisites
+
+- Run the Python agent backend (`python agent.py`) under `complex-agents/role-playing` first.
+- Node.js (v16+) or pnpm
+
+### Install & Run
 
 ```bash
-lk app create --template voice-assistant-frontend
-```
-
-Then run the app with:
-
-```bash
+cd complex-agents/role-playing/role_playing_frontend
 pnpm install
 pnpm dev
 ```
 
-And open http://localhost:3000 in your browser.
+Open http://localhost:3000 in your browser.
 
-You'll also need an agent to speak with. Try our [Voice AI Quickstart](https://docs.livekit.io/start/voice-ai) for the easiest way to get started.
+### Configuration
 
-> [!NOTE]
-> If you need to modify the LiveKit project credentials used, you can edit `.env.local` (copy from `.env.example` if you don't have one) to suit your needs.
+Copy `.env.example` to `.env.local` and adjust if needed:
+
+```env
+NEXT_PUBLIC_CONN_DETAILS_ENDPOINT=/api/connection-details
+```
+
+Make sure your backend and frontend endpoints align.
+
+## Folder Structure
+
+- `app/` — Next.js App Router (layouts, pages, API route for connection details)
+- `components/` — React components (CharacterPortrait, GameStatus, SessionView)
+- `hooks/` — Custom hooks for connection, transcription, debug
+- `lib/` — Shared utilities and types
+- `public/portraits/` — Portrait images for NPCs and agents
+- `public/fonts/`, `postcss.config.js`, `tailwind.config.ts` — Styling and theming config
 
 ## Contributing
 
-This template is open source and we welcome contributions! Please open a PR or issue through GitHub, and don't forget to join us in the [LiveKit Community Slack](https://livekit.io/join-slack)!
+This demo is open source—feel free to open issues or PRs. Join us on the LiveKit Community Slack to discuss ideas and improvements.
