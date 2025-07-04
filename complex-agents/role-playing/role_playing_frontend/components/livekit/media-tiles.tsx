@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import { AgentTile } from './agent-tile';
 import { AvatarTile } from './avatar-tile';
 import { VideoTile } from './video-tile';
+import { CharacterPortrait } from '../character-portrait';
 
 const MotionVideoTile = motion.create(VideoTile);
 const MotionAgentTile = motion.create(AgentTile);
@@ -61,7 +62,7 @@ const classNames = {
   // chatOpen: false
   // layout: Column 1 / Row 1 / Column-Span 2 / Row-Span 3
   // align: x-center y-center
-  agentChatClosed: ['col-start-1 row-start-1', 'col-span-2 row-span-3', 'place-content-center'],
+  agentChatClosed: ['col-start-1 row-start-1', 'col-span-2 row-span-3', 'flex items-center justify-center'],
   // Second tile
   // chatOpen: true,
   // hasSecondTile: true
@@ -109,7 +110,7 @@ export function MediaTiles({ chatOpen }: MediaTilesProps) {
   };
   const agentAnimate = {
     ...animationProps.animate,
-    scale: chatOpen ? 1 : 3,
+    scale: 1, // Keep scale consistent to prevent overlap
     transition,
   };
   const avatarAnimate = {
@@ -136,33 +137,51 @@ export function MediaTiles({ chatOpen }: MediaTilesProps) {
             ])}
           >
             <AnimatePresence mode="popLayout">
-              {!isAvatar && (
-                // audio-only agent
-                <MotionAgentTile
-                  key="agent"
-                  layoutId="agent"
-                  {...animationProps}
-                  animate={agentAnimate}
-                  transition={agentLayoutTransition}
-                  state={agentState}
-                  audioTrack={agentAudioTrack}
-                  className={cn(chatOpen ? 'h-[90px]' : 'h-auto w-full')}
-                />
-              )}
-              {isAvatar && (
-                // avatar agent
-                <MotionAvatarTile
-                  key="avatar"
-                  layoutId="avatar"
-                  {...animationProps}
-                  animate={avatarAnimate}
-                  transition={avatarLayoutTransition}
-                  videoTrack={agentVideoTrack}
+              <div className={cn(
+                'flex flex-col items-center justify-center',
+                'gap-6', // Increased gap to prevent overlap
+                !chatOpen && 'scale-100' // Removed scale to prevent overlap issues
+              )}>
+                {/* Character Portrait Card */}
+                <CharacterPortrait 
                   className={cn(
-                    chatOpen ? 'h-[90px] [&>video]:h-[90px] [&>video]:w-auto' : 'h-auto w-full'
+                    'transition-all duration-300',
+                    'flex-shrink-0', // Prevent portrait from shrinking
+                    chatOpen ? 'w-32 h-48' : 'w-48 h-72'
                   )}
                 />
-              )}
+                
+                {!isAvatar && (
+                  // audio-only agent
+                  <MotionAgentTile
+                    key="agent"
+                    layoutId="agent"
+                    {...animationProps}
+                    animate={agentAnimate}
+                    transition={agentLayoutTransition}
+                    state={agentState}
+                    audioTrack={agentAudioTrack}
+                    className={cn(
+                      'flex-shrink-0', // Prevent visualizer from shrinking
+                      chatOpen ? 'h-[90px] w-[90px]' : 'h-[160px] w-[160px]'
+                    )}
+                  />
+                )}
+                {isAvatar && (
+                  // avatar agent
+                  <MotionAvatarTile
+                    key="avatar"
+                    layoutId="avatar"
+                    {...animationProps}
+                    animate={avatarAnimate}
+                    transition={avatarLayoutTransition}
+                    videoTrack={agentVideoTrack}
+                    className={cn(
+                      chatOpen ? 'h-[90px] [&>video]:h-[90px] [&>video]:w-auto' : 'h-auto w-full'
+                    )}
+                  />
+                )}
+              </div>
             </AnimatePresence>
           </div>
 

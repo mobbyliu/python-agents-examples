@@ -156,12 +156,42 @@ async def entrypoint(ctx: JobContext):
             logger.error(f"Error in get_inventory RPC: {e}")
             return json.dumps({"success": False, "error": str(e)})
     
+    async def get_current_context(data: RpcInvocationData) -> str:
+        """Get current conversation context (agent type, active NPC, etc)"""
+        try:
+            logger.info(f"get_current_context called - active_npc: {userdata.active_npc.name if userdata.active_npc else 'None'}")
+            
+            response = {
+                "success": True,
+                "data": {
+                    "agent_type": userdata.current_agent_type,
+                    "game_state": userdata.game_state,
+                    "active_npc": None,
+                    "in_combat": userdata.combat_state is not None
+                }
+            }
+            
+            # Check if we're in dialogue with a specific NPC
+            if userdata.active_npc:
+                response["data"]["active_npc"] = {
+                    "name": userdata.active_npc.name.lower(),
+                    "class": userdata.active_npc.character_class.value,
+                    "disposition": userdata.active_npc.disposition
+                }
+                logger.info(f"Returning active_npc in response: {response['data']['active_npc']}")
+            
+            return json.dumps(response)
+        except Exception as e:
+            logger.error(f"Error in get_current_context RPC: {e}")
+            return json.dumps({"success": False, "error": str(e)})
+    
     # Register RPC methods
     ctx.room.local_participant.register_rpc_method("get_game_state", get_game_state)
     ctx.room.local_participant.register_rpc_method("get_combat_state", get_combat_state)
     ctx.room.local_participant.register_rpc_method("get_inventory", get_inventory)
+    ctx.room.local_participant.register_rpc_method("get_current_context", get_current_context)
     
-    logger.info("RPC methods registered: get_game_state, get_combat_state, get_inventory")
+    logger.info("RPC methods registered: get_game_state, get_combat_state, get_inventory, get_current_context")
     
     # Create initial agent
     narrator_agent = NarratorAgent()

@@ -481,6 +481,7 @@ class CombatAgent(BaseGameAgent):
         userdata.combat_state = None
         userdata.game_state = "exploration" if victory or fled else "game_over"
         userdata.current_agent_type = "narrator"
+        userdata.active_npc = None  # Clear active NPC when combat ends
         
         # Clear defeated enemies
         userdata.current_npcs = [npc for npc in userdata.current_npcs if npc.current_health > 0]

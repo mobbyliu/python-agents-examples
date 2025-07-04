@@ -23,6 +23,7 @@ class GameUserData:
     current_agent_type: str = "narrator"
     current_location: str = "tavern"
     prev_agent: Optional['Agent'] = None  # For context preservation
+    active_npc: Optional[NPCCharacter] = None  # NPC currently in dialogue
     
     # Track game history
     completed_quests: List[str] = field(default_factory=list)

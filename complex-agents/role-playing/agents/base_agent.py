@@ -92,9 +92,13 @@ class BaseGameAgent(Agent):
             "data": data or {}
         }
         
+        logger.info(f"Emitting state update: {update_type}")
+        
         try:
             room = userdata.ctx.room
             remote_participants = list(room.remote_participants.values())
+            
+            logger.info(f"Found {len(remote_participants)} remote participants to notify")
             
             for participant in remote_participants:
                 try:
@@ -103,7 +107,7 @@ class BaseGameAgent(Agent):
                         method="game_state_update",
                         payload=json.dumps(payload)
                     )
-                    logger.debug(f"Emitted {update_type} update to {participant.identity}")
+                    logger.info(f"Successfully emitted {update_type} update to {participant.identity}")
                 except Exception as e:
                     logger.error(f"Failed to emit update to {participant.identity}: {e}")
                     

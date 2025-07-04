@@ -1,5 +1,6 @@
 import random
 import asyncio
+import logging
 from typing import List, TYPE_CHECKING
 
 from livekit.agents.llm import function_tool
@@ -15,6 +16,8 @@ from utils.prompt_loader import load_prompt
 
 if TYPE_CHECKING:
     from agents.combat_agent import CombatAgent
+
+logger = logging.getLogger("agents-and-storms")
 
 
 class NarratorAgent(BaseGameAgent):
@@ -168,6 +171,17 @@ class NarratorAgent(BaseGameAgent):
             npc_created = True
         
         if action == "talk":
+            # Set active NPC and update game state
+            userdata.active_npc = npc
+            userdata.game_state = "dialogue"
+            logger.info(f"Set active_npc to: {npc.name} (class: {npc.character_class.value})")
+            
+            # Emit state update for portrait change
+            await self.emit_state_update("npc_dialogue_start", {
+                "npc_name": npc.name,
+                "npc_class": npc.character_class.value
+            })
+            
             charisma_mod = userdata.player_character.stats.get_modifier("charisma")
             reaction = npc.get_reaction(charisma_mod)
             dialogue = npc.get_dialogue("greeting")
@@ -210,11 +224,36 @@ class NarratorAgent(BaseGameAgent):
             return f"You can 'talk' to or 'attack' {npc.name}, but '{action}' isn't a valid action."
     
     @function_tool
+    async def end_dialogue(self, context: RunContext_T):
+        """End dialogue with current NPC and return to exploration"""
+        userdata = context.userdata
+        if userdata.active_npc:
+            npc_name = userdata.active_npc.name
+            userdata.active_npc = None
+            userdata.game_state = "exploration"
+            
+            # Emit state update for portrait change
+            await self.emit_state_update("npc_dialogue_end", {
+                "npc_name": npc_name
+            })
+            
+            return f"You bid farewell to {npc_name} and step back."
+        else:
+            return "You're not talking to anyone right now."
+    
+    @function_tool
     async def explore_area(self, context: RunContext_T, direction: str = "forward"):
         """Explore in a direction"""
         userdata = context.userdata
         if not userdata.player_character:
             return "You need to create a character first!"
+        
+        # Clear active NPC when exploring
+        if userdata.active_npc:
+            userdata.active_npc = None
+            # Emit state update for portrait change
+            await self.emit_state_update("exploration_start", {})
+        userdata.game_state = "exploration"
         
         # Simple location system - this could be enhanced with dynamic generation
         locations = {
