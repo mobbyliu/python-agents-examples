@@ -2,6 +2,8 @@
 
 A voice-driven RPG built on LiveKit agents with Inworld TTS, showcasing narrator/combat switching, classic RPG mechanics, and persistent game state.
 
+[![Dungeons and Agents](https://img.youtube.com/vi/1xm4f8HzBEI/0.jpg)](https://www.youtube.com/watch?v=1xm4f8HzBEI)
+
 ## Overview
 
 **Dungeons and Agents** demonstrates an end-to-end voice-first RPG using LiveKit agents. Key features:
