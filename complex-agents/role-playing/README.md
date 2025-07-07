@@ -1,12 +1,12 @@
 # Dungeons and Agents - Voice-Driven RPG
 
-A voice-driven RPG built on LiveKit agents, showcasing seamless narrator/combat switching, classic RPG mechanics, and persistent game state.
+A voice-driven RPG built on LiveKit agents with Inworld TTS, showcasing narrator/combat switching, classic RPG mechanics, and persistent game state.
 
 ## Overview
 
 **Dungeons and Agents** demonstrates an end-to-end voice-first RPG using LiveKit agents. Key features:
 
-- **Multi-Agent System**: Seamless switching between a dramatic narrator agent and an action-packed combat agent
+- **Multi-Agent System**: Seamless switching between a dramatic narrator agent and an action-focused combat agent
 - **Character System**: Create and develop your character with classic RPG classes (Warrior, Mage, Rogue, Cleric)
 - **D&D-Style Mechanics**: Dice rolling, skill checks, combat with initiative, and spell casting
 - **Trading System**: Charisma‑based item and gold trading with NPCs
@@ -25,6 +25,7 @@ A voice-driven RPG built on LiveKit agents, showcasing seamless narrator/combat 
   - OpenAI (for LLM)
   - Deepgram (for STT)
   - Inworld (for TTS)
+  - Cerebras (for dynamic generation of NPCs and items)
 
 ### Installation
 
@@ -41,11 +42,12 @@ LIVEKIT_API_SECRET=your-api-secret
 OPENAI_API_KEY=your-openai-key
 DEEPGRAM_API_KEY=your-deepgram-key
 INWORLD_API_KEY=your-inworld-key
+CEREBRAS_API_KEY=your-cerebras-key
 ```
 
 3. Run the agent:
 ```bash
-python agent.py
+python agent.py dev
 ```
 
 ## How to Play
@@ -73,12 +75,6 @@ When you first connect, the narrator will guide you through character creation:
   - Trade success depends on offer value and your Charisma
 ### Loot & Trading Rules
 
-#### Loot Rules
-- After winning combat, defeated enemies transfer all gold and items to you automatically.
-  - Gold: roll `<enemy_level>d10` per enemy level.
-  - 30% chance to find a healing potion.
-  - 10% × enemy level chance to find one enchanted item (sword, shield, armor, ring, or amulet).
-
 #### Trade Mechanics
 - Use `Check [NPC]'s inventory` and `Trade with [NPC]` to negotiate item/gold exchanges.
 - Item values (approximate):
@@ -102,7 +98,7 @@ When combat begins, the agent automatically switches to the combat master:
 - **"Flee"** - Attempt to escape
 - **"Status"** - Check combat status
 
-### Available Spells
+### Default Available Spells
 - **Firebolt** (Mage) - Damage spell
 - **Heal** (Cleric) - Restore health
 - **Shield** (Mage) - Defensive buff
@@ -141,7 +137,7 @@ The narrator interprets these results narratively, so failures have real consequ
 
 ### Agent Switching
 
-The game seamlessly switches between agents based on context:
+The game switches between agents based on context:
 
 ```python
 # When combat starts in NarratorAgent
