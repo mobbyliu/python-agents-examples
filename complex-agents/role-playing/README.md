@@ -31,7 +31,7 @@ A voice-driven RPG built on LiveKit agents with Inworld TTS, showcasing narrator
 
 ### Installation
 
-1. Install dependencies:
+1. Install dependencies from the main `python-agents-examples` repo:
 ```bash
 pip install -r requirements.txt
 ```
@@ -50,6 +50,12 @@ CEREBRAS_API_KEY=your-cerebras-key
 3. Run the agent:
 ```bash
 python agent.py dev
+```
+
+4. Run the frontend
+```bash
+cd role_playing_frontend
+pnpm install && pnpm dev
 ```
 
 ## How to Play
