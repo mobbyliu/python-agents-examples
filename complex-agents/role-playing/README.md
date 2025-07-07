@@ -24,7 +24,7 @@ A voice-driven RPG built on LiveKit agents, showcasing seamless narrator/combat 
 - API keys for:
   - OpenAI (for LLM)
   - Deepgram (for STT)
-  - Cartesia (for TTS)
+  - Inworld (for TTS)
 
 ### Installation
 
@@ -40,7 +40,7 @@ LIVEKIT_API_KEY=your-api-key
 LIVEKIT_API_SECRET=your-api-secret
 OPENAI_API_KEY=your-openai-key
 DEEPGRAM_API_KEY=your-deepgram-key
-CARTESIA_API_KEY=your-cartesia-key
+INWORLD_API_KEY=your-inworld-key
 ```
 
 3. Run the agent:
