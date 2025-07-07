@@ -13,7 +13,7 @@ from game_mechanics import Combat, SpellCasting, GameUtilities, CombatAction
 from utils.display import Colors
 from utils.prompt_loader import load_prompt
 
-logger = logging.getLogger("agents-and-storms")
+logger = logging.getLogger("dungeons-and-agents")
 
 if TYPE_CHECKING:
     from agents.narrator_agent import NarratorAgent
@@ -154,7 +154,7 @@ class CombatAgent(BaseGameAgent):
             
             # End the session properly
             logger.info("Player defeated - ending session")
-            await self.session.say("Thank you for playing Agents and Storms. Until next time, brave adventurer!")
+            await self.session.say("Thank you for playing Dungeons and Agents. Until next time, brave adventurer!")
             await self.session.drain()  # Ensure all messages are sent
             await self.session.aclose()
             

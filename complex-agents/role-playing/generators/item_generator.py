@@ -10,7 +10,7 @@ from livekit.agents.llm import ChatContext, ChatMessage
 
 from character import Item
 
-logger = logging.getLogger("agents-and-storms")
+logger = logging.getLogger("dungeons-and-agents")
 
 
 class ItemGenerator:
@@ -64,8 +64,8 @@ Example format:
     {{"name": "Healing Potion", "type": "consumable", "quantity": 2, "value": 25, "description": "A small vial of glowing red liquid that smells of herbs and honey."}}
 ]"""
         
-        # Generate items
-        response = await self._generate_json(prompt)
+        # Generate items - using Cerebras for speed
+        response = await self._generate_json(prompt, use_cerebras=True)
         
         # Parse and create Item objects
         items = []
@@ -150,9 +150,9 @@ Example format:
                 
         return properties
     
-    async def _generate_json(self, prompt: str, model: str = "gpt-4o-mini") -> Any:
+    async def _generate_json(self, prompt: str, model: str = "gpt-4o-mini", use_cerebras: bool = False) -> Any:
         """Generate JSON response using LLM"""
-        llm = openai.LLM(model=model)
+        llm = openai.LLM.with_cerebras() if use_cerebras else openai.LLM(model=model)
         
         ctx = ChatContext([
             ChatMessage(

@@ -32,7 +32,7 @@ export const Welcome = ({
         />
       </svg>
 
-      <h1 className="text-fg0 text-2xl font-bold mb-2">Agents & Storms</h1>
+      <h1 className="text-fg0 text-2xl font-bold mb-2">Dungeons & Agents</h1>
       <p className="text-fg1 max-w-prose pt-1 leading-6 font-medium">
         Experience an AI-powered tabletop RPG adventure
       </p>

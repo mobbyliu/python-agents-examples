@@ -43,21 +43,21 @@ const classNames = {
   // 2 Columns x 3 Rows
   grid: [
     'h-full w-full',
-    'grid gap-x-2 place-content-center',
-    'grid-cols-[1fr_1fr] grid-rows-[90px_1fr_90px]',
+    'grid gap-x-2',
+    'grid-cols-[1fr_1fr] grid-rows-[auto_1fr_90px]',
   ],
   // Agent
   // chatOpen: true,
   // hasSecondTile: true
   // layout: Column 1 / Row 1
   // align: x-end y-center
-  agentChatOpenWithSecondTile: ['col-start-1 row-start-1', 'self-center justify-self-end'],
+  agentChatOpenWithSecondTile: ['col-start-1 row-start-1', 'self-start justify-self-end'],
   // Agent
   // chatOpen: true,
   // hasSecondTile: false
   // layout: Column 1 / Row 1 / Column-Span 2
   // align: x-center y-center
-  agentChatOpenWithoutSecondTile: ['col-start-1 row-start-1', 'col-span-2', 'place-content-center'],
+  agentChatOpenWithoutSecondTile: ['col-start-1 row-start-1', 'col-span-2', 'self-start justify-self-center'],
   // Agent
   // chatOpen: false
   // layout: Column 1 / Row 1 / Column-Span 2 / Row-Span 3
@@ -123,9 +123,12 @@ export function MediaTiles({ chatOpen }: MediaTilesProps) {
   const isAvatar = agentVideoTrack !== undefined;
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-8 bottom-32 z-50 md:top-12 md:bottom-40">
-      <div className="relative mx-auto h-full max-w-2xl px-4 md:px-0">
-        <div className={cn(classNames.grid)}>
+    <div className="pointer-events-none fixed inset-x-0 top-8 z-50 md:top-12">
+      <div className="relative mx-auto max-w-2xl px-4 md:px-0">
+        <div className={cn(
+          classNames.grid,
+          chatOpen ? 'h-[180px]' : 'h-[calc(100vh-12rem)]'
+        )}>
           {/* agent */}
           <div
             className={cn([
@@ -138,49 +141,54 @@ export function MediaTiles({ chatOpen }: MediaTilesProps) {
           >
             <AnimatePresence mode="popLayout">
               <div className={cn(
-                'flex flex-col items-center justify-center',
-                'gap-6', // Increased gap to prevent overlap
-                !chatOpen && 'scale-100' // Removed scale to prevent overlap issues
+                'flex items-center justify-center',
+                !chatOpen && 'h-full'
               )}>
-                {/* Character Portrait Card */}
-                <CharacterPortrait 
-                  className={cn(
-                    'transition-all duration-300',
-                    'flex-shrink-0', // Prevent portrait from shrinking
-                    chatOpen ? 'w-32 h-48' : 'w-48 h-72'
+                <div className={cn(
+                  'flex flex-row items-center',
+                  chatOpen ? 'gap-4' : 'flex-col gap-6'
+                )}>
+                  {/* Character Portrait Card */}
+                  <CharacterPortrait 
+                    className={cn(
+                      'transition-all duration-300',
+                      'flex-shrink-0', // Prevent portrait from shrinking
+                      chatOpen ? 'w-32 h-48' : 'w-48 h-72'
+                    )}
+                  />
+                  
+                  {!isAvatar && (
+                    // audio-only agent
+                    <MotionAgentTile
+                      key="agent"
+                      layoutId="agent"
+                      {...animationProps}
+                      animate={agentAnimate}
+                      transition={agentLayoutTransition}
+                      state={agentState}
+                      audioTrack={agentAudioTrack}
+                      className={cn(
+                        'flex-shrink-0', // Prevent visualizer from shrinking
+                        chatOpen ? 'h-[90px] w-[90px]' : 'h-[160px] w-[160px]'
+                      )}
+                    />
                   )}
-                />
-                
-                {!isAvatar && (
-                  // audio-only agent
-                  <MotionAgentTile
-                    key="agent"
-                    layoutId="agent"
-                    {...animationProps}
-                    animate={agentAnimate}
-                    transition={agentLayoutTransition}
-                    state={agentState}
-                    audioTrack={agentAudioTrack}
-                    className={cn(
-                      'flex-shrink-0', // Prevent visualizer from shrinking
-                      chatOpen ? 'h-[90px] w-[90px]' : 'h-[160px] w-[160px]'
-                    )}
-                  />
-                )}
-                {isAvatar && (
-                  // avatar agent
-                  <MotionAvatarTile
-                    key="avatar"
-                    layoutId="avatar"
-                    {...animationProps}
-                    animate={avatarAnimate}
-                    transition={avatarLayoutTransition}
-                    videoTrack={agentVideoTrack}
-                    className={cn(
-                      chatOpen ? 'h-[90px] [&>video]:h-[90px] [&>video]:w-auto' : 'h-auto w-full'
-                    )}
-                  />
-                )}
+                  
+                  {isAvatar && (
+                    // avatar agent
+                    <MotionAvatarTile
+                      key="avatar"
+                      layoutId="avatar"
+                      {...animationProps}
+                      animate={avatarAnimate}
+                      transition={avatarLayoutTransition}
+                      videoTrack={agentVideoTrack}
+                      className={cn(
+                        chatOpen ? 'h-[90px] [&>video]:h-[90px] [&>video]:w-auto' : 'h-auto w-full'
+                      )}
+                    />
+                  )}
+                </div>
               </div>
             </AnimatePresence>
           </div>

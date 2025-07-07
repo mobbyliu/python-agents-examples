@@ -10,7 +10,7 @@ from livekit.agents.llm import ChatContext, ChatMessage
 from character import NPCCharacter, CharacterClass, CharacterStats, create_random_npc
 from generators.item_generator import ItemGenerator
 
-logger = logging.getLogger("agents-and-storms")
+logger = logging.getLogger("dungeons-and-agents")
 
 
 class NPCGenerator:
@@ -126,8 +126,8 @@ class NPCGenerator:
             traits=', '.join(traits)
         )
         
-        # Generate personality first (needed for backstory)
-        personality = await self._generate_text(personality_prompt)
+        # Generate personality first (needed for backstory) - using Cerebras for speed
+        personality = await self._generate_text(personality_prompt, use_cerebras=True)
         
         backstory_prompt = self.rules['generation_prompts']['backstory'].format(
             name=npc.name,
@@ -138,8 +138,8 @@ class NPCGenerator:
             location=location
         )
         
-        # Generate backstory and inventory in parallel
-        backstory_task = self._generate_text(backstory_prompt)
+        # Generate backstory and inventory in parallel - using Cerebras for speed
+        backstory_task = self._generate_text(backstory_prompt, use_cerebras=True)
         inventory_task = self.item_generator.generate_npc_inventory(
             npc.name,
             npc.character_class.value,
@@ -167,7 +167,7 @@ class NPCGenerator:
             relationship="first meeting"
         )
         
-        response = await self._generate_text(dialogue_prompt)
+        response = await self._generate_text(dialogue_prompt, use_cerebras=True)
         
         # Parse dialogue lines from response
         dialogue_lines = []
@@ -182,9 +182,9 @@ class NPCGenerator:
         
         return dialogue_lines[:5]  # Keep first 5 lines
     
-    async def _generate_text(self, prompt: str, model: str = "gpt-4o-mini") -> str:
+    async def _generate_text(self, prompt: str, model: str = "gpt-4o-mini", use_cerebras: bool = False) -> str:
         """Generate text using LLM"""
-        llm = openai.LLM(model=model)
+        llm = openai.LLM.with_cerebras() if use_cerebras else openai.LLM(model=model)
         
         ctx = ChatContext([
             ChatMessage(

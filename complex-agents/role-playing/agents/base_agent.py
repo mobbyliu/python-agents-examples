@@ -6,7 +6,7 @@ from livekit.agents.llm import ChatContext
 
 from character import NPCCharacter
 
-logger = logging.getLogger("agents-and-storms")
+logger = logging.getLogger("dungeons-and-agents")
 
 
 class BaseGameAgent(Agent):

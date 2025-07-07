@@ -9,7 +9,7 @@ from livekit.rtc import RpcInvocationData
 from core.game_state import GameUserData
 from agents.narrator_agent import NarratorAgent
 
-logger = logging.getLogger("agents-and-storms")
+logger = logging.getLogger("dungeons-and-agents")
 logger.setLevel(logging.INFO)
 
 load_dotenv()

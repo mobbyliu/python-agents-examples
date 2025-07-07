@@ -1,4 +1,4 @@
-# Agents and Storms - RPG Game Architecture
+# Dungeons and Agents - RPG Game Architecture
 
 This is a modular, extensible RPG game built with LiveKit Agents. The architecture emphasizes dynamic content generation using LLMs while maintaining clean code organization.
 

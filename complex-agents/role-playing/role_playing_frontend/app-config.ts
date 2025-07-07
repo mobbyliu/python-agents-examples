@@ -1,8 +1,8 @@
 import type { AppConfig } from './lib/types';
 
 export const APP_CONFIG_DEFAULTS: AppConfig = {
-  companyName: 'Agents & Storms',
-  pageTitle: 'Agents & Storms - AI Tabletop RPG',
+  companyName: 'Dungeons & Agents',
+  pageTitle: 'Dungeons & Agents - AI Tabletop RPG',
   pageDescription: 'An AI-powered tabletop RPG adventure with Inworld voices',
 
   supportsChatInput: true,

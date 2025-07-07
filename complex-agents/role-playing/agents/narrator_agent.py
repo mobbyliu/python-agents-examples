@@ -17,7 +17,7 @@ from utils.prompt_loader import load_prompt
 if TYPE_CHECKING:
     from agents.combat_agent import CombatAgent
 
-logger = logging.getLogger("agents-and-storms")
+logger = logging.getLogger("dungeons-and-agents")
 
 
 class NarratorAgent(BaseGameAgent):
@@ -37,11 +37,40 @@ class NarratorAgent(BaseGameAgent):
         userdata = self.session.userdata
         
         if userdata.game_state == "character_creation":
-            self.session.say("Welcome to Agents and Storms! Let's create your character. What is your name, brave adventurer?")
+            self.session.say("Welcome to Dungeons and Agents! Let's create your character. What is your name, brave adventurer?")
         elif userdata.game_state == "exploration":
             # Describe current location
             location_desc = GameUtilities.describe_environment(userdata.current_location)
             self.session.say(location_desc)
+    
+    @function_tool
+    async def say_in_character_voice(self, context: RunContext_T, voice: str, dialogue: str):
+        """Say dialogue in a specific character voice for NPCs or other characters
+        
+        Available voices: Mark, Ashley, Deborah, Olivia, Dennis
+        """
+        # Store the current voice
+        original_voice = "Hades"  # Default narrator voice
+        
+        # Validate voice selection
+        available_voices = ["Mark", "Ashley", "Deborah", "Olivia", "Dennis"]
+        if voice not in available_voices:
+            return f"Voice '{voice}' not available. Choose from: {', '.join(available_voices)}"
+        
+        # Change to the character voice
+        self.tts.update_options(voice=voice)
+        
+        # Say the dialogue
+        await self.session.say(dialogue)
+        
+        # Return to narrator voice
+        self.tts.update_options(voice=original_voice)
+        
+        # Log the voice acting for story context
+        userdata = context.userdata
+        userdata.add_story_event(f"Character spoke in {voice}'s voice: '{dialogue}'")
+        
+        return f"*speaks in {voice}'s voice*"
     
     @function_tool
     async def create_character(self, context: RunContext_T, name: str, character_class: str = "warrior"):
@@ -251,8 +280,9 @@ class NarratorAgent(BaseGameAgent):
         # Clear active NPC when exploring
         if userdata.active_npc:
             userdata.active_npc = None
-            # Emit state update for portrait change
-            await self.emit_state_update("exploration_start", {})
+        
+        # Always emit state update for portrait change when exploring
+        await self.emit_state_update("exploration_start", {})
         userdata.game_state = "exploration"
         
         # Simple location system - this could be enhanced with dynamic generation
@@ -280,6 +310,9 @@ class NarratorAgent(BaseGameAgent):
             new_location = connections[specific_direction]
             userdata.current_location = new_location
             userdata.visited_locations.append(new_location)
+            
+            # Clear NPCs from previous location
+            userdata.current_npcs = []
             
             # Chance of random encounter
             if "dungeon" in new_location and random.random() < 0.4:

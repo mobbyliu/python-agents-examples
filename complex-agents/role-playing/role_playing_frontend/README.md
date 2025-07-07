@@ -2,7 +2,7 @@
 
 # Role-Playing Demo Frontend
 
-This Next.js application is the UI for the **Agents and Storms** role-playing demo. It connects to the Python agent backend via RPC to present a voice-first RPG interface, complete with dynamically updating character portraits, game status, and voice interaction.
+This Next.js application is the UI for the **Dungeons and Agents** role-playing demo. It connects to the Python agent backend via RPC to present a voice-first RPG interface, complete with dynamically updating character portraits, game status, and voice interaction.
 
 ![App screenshot](./.github/assets/frontend-screenshot.jpeg)
 

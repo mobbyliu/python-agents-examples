@@ -1,10 +1,10 @@
-# Agents and Storms - Voice-Driven RPG
+# Dungeons and Agents - Voice-Driven RPG
 
 A voice-driven RPG built on LiveKit agents, showcasing seamless narrator/combat switching, classic RPG mechanics, and persistent game state.
 
 ## Overview
 
-**Agents and Storms** demonstrates an end-to-end voice-first RPG using LiveKit agents. Key features:
+**Dungeons and Agents** demonstrates an end-to-end voice-first RPG using LiveKit agents. Key features:
 
 - **Multi-Agent System**: Seamless switching between a dramatic narrator agent and an action-packed combat agent
 - **Character System**: Create and develop your character with classic RPG classes (Warrior, Mage, Rogue, Cleric)
@@ -289,7 +289,7 @@ The game is designed for natural voice interaction:
 ## Example Gameplay
 
 ```
-Narrator: "Welcome to Agents and Storms! What is your name, brave adventurer?"
+Narrator: "Welcome to Dungeons and Agents! What is your name, brave adventurer?"
 Player: "My name is Marcus"
 Narrator: "Excellent! What class would you like to play?"
 Player: "I'll be a warrior"
