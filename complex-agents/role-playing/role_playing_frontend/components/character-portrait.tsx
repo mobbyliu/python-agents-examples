@@ -41,14 +41,14 @@ export function CharacterPortrait({ className }: CharacterPortraitProps) {
     const updatePortraitFromContext = (context: any) => {
       console.log('[CharacterPortrait] Updating portrait from context:', JSON.stringify(context, null, 2));
       
-      // Check if we have an active NPC
-      if (context.active_npc) {
-        const npcName = context.active_npc.name.toLowerCase();
-        console.log('[CharacterPortrait] Active NPC detected:', npcName);
+      // Check if we have a voice acting character
+      if (context.voice_acting_character) {
+        const characterName = context.voice_acting_character.toLowerCase();
+        console.log('[CharacterPortrait] Voice acting character detected:', characterName);
         
-        if (npcPortraits[npcName]) {
-          const newPortrait = npcPortraits[npcName].portrait;
-          const newName = npcPortraits[npcName].name;
+        if (npcPortraits[characterName]) {
+          const newPortrait = npcPortraits[characterName].portrait;
+          const newName = npcPortraits[characterName].name;
           console.log('[CharacterPortrait] Setting portrait to:', newPortrait);
           
           // Only update if actually changed
@@ -60,15 +60,15 @@ export function CharacterPortrait({ className }: CharacterPortraitProps) {
           });
           setCharacterName(newName);
         } else {
-          console.log('[CharacterPortrait] No specific portrait for NPC, using fallback');
-          // Fallback to narrator
-          setCurrentPortrait('/portraits/narrator_card.png');
-          setCharacterName(npcName.charAt(0).toUpperCase() + npcName.slice(1));
+          console.log('[CharacterPortrait] No specific portrait for character, using fallback');
+          // Fallback to generic portrait based on character type
+          setCurrentPortrait('/portraits/villager_card.png');
+          setCharacterName(characterName.charAt(0).toUpperCase() + characterName.slice(1));
         }
       } else {
         // Use agent portrait
         const portraitData = agentPortraits[context.agent_type] || agentPortraits['narrator'];
-        console.log('[CharacterPortrait] No active NPC, using agent portrait:', portraitData.portrait);
+        console.log('[CharacterPortrait] No voice acting character, using agent portrait:', portraitData.portrait);
         setCurrentPortrait(portraitData.portrait);
         setCharacterName(portraitData.name);
       }
@@ -117,9 +117,8 @@ export function CharacterPortrait({ className }: CharacterPortraitProps) {
           console.log('[CharacterPortrait] Received game state update:', update);
           
           // Fetch updated context on relevant events
-          if (update.type === 'npc_dialogue_start' || 
-              update.type === 'npc_dialogue_end' || 
-              update.type === 'exploration_start' || 
+          if (update.type === 'voice_acting_start' || 
+              update.type === 'voice_acting_end' || 
               update.type === 'combat_start') {
             console.log('[CharacterPortrait] Event matches, fetching context...');
             await fetchCurrentContext();

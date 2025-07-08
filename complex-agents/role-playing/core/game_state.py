@@ -24,6 +24,9 @@ class GameUserData:
     current_location: str = "tavern"
     prev_agent: Optional['Agent'] = None  # For context preservation
     active_npc: Optional[NPCCharacter] = None  # NPC currently in dialogue
+    voice_acting_character: Optional[str] = None  # Character currently being voice acted
+    combat_just_ended: bool = False  # Flag to indicate combat recently ended
+    combat_result: Optional[dict] = None  # Store combat results (xp, loot) for narrator
     
     # Track game history
     completed_quests: List[str] = field(default_factory=list)
