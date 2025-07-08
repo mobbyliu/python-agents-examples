@@ -198,10 +198,12 @@ class SkillCheck:
         # Determine ability modifier based on skill
         ability_map = {
             # Strength-based skills
+            "strength": "strength",
             "athletics": "strength",
             "intimidation": "strength",
 
             # Dexterity-based skills
+            "dexterity": "dexterity",
             "stealth": "dexterity",
             "acrobatics": "dexterity",
             "sleight_of_hand": "dexterity",
@@ -209,6 +211,7 @@ class SkillCheck:
             "archery": "dexterity",
 
             # Intelligence-based skills
+            "intelligence": "intelligence",
             "investigation": "intelligence",
             "arcana": "intelligence",
             "history": "intelligence",
@@ -218,6 +221,7 @@ class SkillCheck:
             "engineering": "intelligence",
 
             # Wisdom-based skills
+            "wisdom": "wisdom",
             "perception": "wisdom",
             "insight": "wisdom",
             "survival": "wisdom",
@@ -225,6 +229,7 @@ class SkillCheck:
             "medicine_practical": "wisdom",
 
             # Charisma-based skills
+            "charisma": "charisma",
             "persuasion": "charisma",
             "deception": "charisma",
             "performance": "charisma",

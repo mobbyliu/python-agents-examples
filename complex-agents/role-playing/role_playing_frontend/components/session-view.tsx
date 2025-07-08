@@ -99,11 +99,13 @@ export const SessionView = ({
     >
       <ChatMessageView
         className={cn(
-          'mx-auto min-h-svh w-full max-w-2xl px-3 pt-32 pb-40 transition-[opacity,translate] duration-300 ease-out md:px-0 md:pt-36 md:pb-48',
+          'mx-auto min-h-svh w-full max-w-2xl px-3 pt-64 pb-40 transition-[opacity,translate] duration-300 ease-out md:px-0 md:pt-72 md:pb-48',
           chatOpen ? 'translate-y-0 opacity-100 delay-200' : 'translate-y-20 opacity-0'
         )}
       >
         <div className="space-y-3 whitespace-pre-wrap">
+          {/* Spacer to prevent overlap with media tiles */}
+          {chatOpen && <div className="h-64 md:h-72" />}
           <AnimatePresence>
             {messages.map((message: ReceivedChatMessage) => (
               <motion.div
@@ -120,7 +122,10 @@ export const SessionView = ({
         </div>
       </ChatMessageView>
 
-      <div className="bg-background mp-12 fixed top-0 right-0 left-0 h-32 md:h-36">
+      <div className={cn(
+        "bg-background fixed top-0 right-0 left-0 z-40",
+        chatOpen ? "h-64 md:h-72" : "h-32 md:h-36"
+      )}>
         {/* skrim */}
         <div className="from-background absolute bottom-0 left-0 h-12 w-full translate-y-full bg-gradient-to-b to-transparent" />
       </div>
