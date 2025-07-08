@@ -35,6 +35,7 @@ export function CharacterPortrait({ className }: CharacterPortraitProps) {
       'barkeep': { portrait: '/portraits/barkeep_card.png', name: 'Barkeep' },
       'goblin': { portrait: '/portraits/goblin_card.png', name: 'Goblin' },
       'merchant': { portrait: '/portraits/merchant_card.png', name: 'Merchant' },
+      'rogue': { portrait: '/portraits/rogue_card.png', name: 'Rogue' },
     };
 
     // Function to update portrait based on context

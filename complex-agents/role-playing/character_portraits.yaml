@@ -20,6 +20,10 @@ npcs:
     portrait: barkeep_card.png
     description: "The friendly tavern keeper"
   
+  rogue:
+    portrait: rogue_card.png
+    description: "A cunning rogue"
+
   # Generic NPC types (fallback if specific name not found)
   types:
     merchant:
