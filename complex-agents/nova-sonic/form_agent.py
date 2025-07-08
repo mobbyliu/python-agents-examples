@@ -76,8 +76,6 @@ class UserData:
             logger.error(f"Failed to send RPC to frontend: {e}")
             return f"Error sending to frontend: {str(e)}"
 
-# Remove global variable - we'll use context.userdata instead
-
 def proper_capitalize(text: str) -> str:
     """Properly capitalize text - title case for names, companies, roles"""
     if not text:
@@ -149,11 +147,9 @@ class FormFillerAgent(Agent):
         if not userdata:
             return json.dumps({"status": "error", "message": "Unable to access user data"})
         
-        # Properly capitalize role and company
         current_role = proper_capitalize(current_role.strip())
         company = proper_capitalize(company.strip())
         
-        # Update experience fields
         await userdata.send_form_update_to_frontend("updateMultipleFields", {
             "fields": {
                 "currentRole": current_role,
@@ -261,7 +257,7 @@ class FormFillerAgent(Agent):
         if not userdata:
             return json.dumps({"status": "error", "message": "Unable to access user data"})
         
-        total_sections = 2  # experience, interview questions
+        total_sections = 2
         completed_sections = 0
         
         # Check which sections have been completed
