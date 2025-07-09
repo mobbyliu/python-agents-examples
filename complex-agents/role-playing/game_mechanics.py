@@ -22,6 +22,7 @@ class CombatState:
     """Tracks the state of an ongoing combat encounter"""
     participants: List[Character] = field(default_factory=list)
     initiative_order: List[Character] = field(default_factory=list)
+    defeated_enemies: List[Character] = field(default_factory=list)  # Track defeated enemies for XP/loot
     current_turn_index: int = 0
     round_number: int = 1
     combat_log: List[str] = field(default_factory=list)
@@ -44,6 +45,10 @@ class CombatState:
     
     def remove_defeated(self, character: Character):
         """Remove a defeated character from combat"""
+        # Remove from participants list as well
+        if character in self.participants:
+            self.participants.remove(character)
+            
         if character in self.initiative_order:
             # Adjust current turn index if needed
             char_index = self.initiative_order.index(character)
@@ -192,12 +197,44 @@ class SkillCheck:
         
         # Determine ability modifier based on skill
         ability_map = {
+            # Strength-based skills
+            "strength": "strength",
             "athletics": "strength",
+            "intimidation": "strength",
+
+            # Dexterity-based skills
+            "dexterity": "dexterity",
             "stealth": "dexterity",
-            "perception": "wisdom",
-            "persuasion": "charisma",
+            "acrobatics": "dexterity",
+            "sleight_of_hand": "dexterity",
+            "lockpicking": "dexterity",
+            "archery": "dexterity",
+
+            # Intelligence-based skills
+            "intelligence": "intelligence",
             "investigation": "intelligence",
-            "arcana": "intelligence"
+            "arcana": "intelligence",
+            "history": "intelligence",
+            "nature": "intelligence",
+            "religion": "intelligence",
+            "medicine": "intelligence",
+            "engineering": "intelligence",
+
+            # Wisdom-based skills
+            "wisdom": "wisdom",
+            "perception": "wisdom",
+            "insight": "wisdom",
+            "survival": "wisdom",
+            "animal_handling": "wisdom",
+            "medicine_practical": "wisdom",
+
+            # Charisma-based skills
+            "charisma": "charisma",
+            "persuasion": "charisma",
+            "deception": "charisma",
+            "performance": "charisma",
+            "intimidation_social": "charisma",
+            "leadership": "charisma"
         }
         
         ability = ability_map.get(skill, "wisdom")
@@ -389,7 +426,7 @@ class SpellCasting:
             "damage": "1d10",
             "type": "fire",
             "range": "long",
-            "description": "A bolt of fire strikes a single target"
+            "description": "A bolt of fire"
         },
         "heal": {
             "healing": "1d8+2",
@@ -421,15 +458,40 @@ class SpellCasting:
         if spell_name == "heal" and caster.character_class != CharacterClass.CLERIC:
             return f"Only clerics can cast healing spells!"
         
-        result = f"{caster.name} casts {spell_name}! {spell['description']}"
+        # Add cinematic spell descriptions
+        spell_descriptions = {
+            "firebolt": f"A bolt of fire shoots from {caster.name}'s hand, streaking through the air!",
+            "heal": f"Divine light emanates from {caster.name}'s hands!",
+            "shield": f"{caster.name} weaves protective magic around themselves!"
+        }
+        
+        result = spell_descriptions.get(spell_name, f"{caster.name} casts {spell_name}!")
         
         if "damage" in spell and target:
             damage, breakdown = DiceRoller.roll(spell["damage"])
+            print(f"[SpellCasting] {target.name} health before damage: {target.current_health}/{target.max_health}")
             actual_damage, is_dead = target.take_damage(damage)
-            result += f"\n{breakdown} {spell['type']} damage to {target.name}!"
-            result += f"\n{target.name} takes {actual_damage} damage."
+            print(f"[SpellCasting] Damage roll: {damage}, Actual damage: {actual_damage}")
+            print(f"[SpellCasting] {target.name} health after damage: {target.current_health}/{target.max_health}")
+            print(f"[SpellCasting] Is dead: {is_dead}")
+            
+            # Add impact description
+            if spell_name == "firebolt":
+                result += f" The firebolt strikes {target.name} with searing heat!"
+            else:
+                result += f" The spell strikes {target.name}!"
+                
+            result += f" {target.name} takes {actual_damage} damage"
+            
+            # Add status description
             if is_dead:
-                result += f" {target.name} has been defeated!"
+                result += f" and collapses, defeated!"
+            elif target.current_health < target.max_health * 0.25:
+                result += f" and staggers, badly wounded!"
+            elif target.current_health < target.max_health * 0.5:
+                result += f" and reels from the impact!"
+            else:
+                result += "!"
         
         elif "healing" in spell:
             if not target:

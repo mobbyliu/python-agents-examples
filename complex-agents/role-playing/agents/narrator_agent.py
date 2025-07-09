@@ -36,26 +36,110 @@ class NarratorAgent(BaseGameAgent):
         await super().on_enter()
         userdata = self.session.userdata
         
+        # Track if we handled combat ending
+        combat_was_just_ended = False
+        
+        # Check if we're returning from combat
+        if userdata.combat_just_ended:
+            combat_was_just_ended = True
+            # Clear the flag
+            userdata.combat_just_ended = False
+            
+            # Provide narrative flavor about the combat conclusion
+            location = userdata.current_location.replace("_", " ")
+            if userdata.combat_result:
+                # Victory narrative with integrated rewards
+                defeated_names = [name for name, _ in userdata.combat_result.get("defeated_enemies", [])]
+                
+                # Build the complete narrative message
+                if len(defeated_names) == 1:
+                    victory_message = f"The {defeated_names[0]} lies defeated before you."
+                else:
+                    victory_message = f"Your enemies lie defeated."
+                
+                # Add XP information naturally
+                xp_gained = userdata.combat_result.get("xp_gained", 0)
+                if xp_gained > 0:
+                    victory_message += f" You gained {xp_gained} experience"
+                    
+                    # Add level up if applicable
+                    if userdata.combat_result.get("level_up"):
+                        victory_message += f" and feel your power growing - {userdata.combat_result['level_up']}"
+                    else:
+                        victory_message += " from the encounter"
+                    
+                    victory_message += "."
+                
+                # Add loot information naturally
+                loot = userdata.combat_result.get("loot", [])
+                gold_gained = userdata.combat_result.get("gold_gained", 0)
+                
+                if loot or gold_gained > 0:
+                    victory_message += " Among their belongings, you find"
+                    
+                    items_found = []
+                    if gold_gained > 0:
+                        items_found.append(f"{gold_gained} gold pieces")
+                    
+                    # Add items from the loot list (already cleaned by combat agent)
+                    items_found.extend(loot)
+                    
+                    if items_found:
+                        if len(items_found) == 1:
+                            victory_message += f" {items_found[0]}."
+                        elif len(items_found) == 2:
+                            victory_message += f" {items_found[0]} and {items_found[1]}."
+                        else:
+                            victory_message += f" {', '.join(items_found[:-1])}, and {items_found[-1]}."
+                    else:
+                        victory_message += " nothing of value."
+                else:
+                    victory_message += " They carried nothing of value."
+                
+                # Add atmospheric ending
+                victory_message += f" The {location} grows quiet once more."
+                
+                self.session.say(victory_message)
+                
+                # Clear combat result
+                userdata.combat_result = None
+            else:
+                # Fled or other non-victory ending
+                self.session.say(f"You catch your breath, safe for now in the {location}.")
+            
+            # Add a small delay before continuing
+            await asyncio.sleep(1.0)
+            
+        # Continue with normal entry logic
         if userdata.game_state == "character_creation":
             self.session.say("Welcome to Dungeons and Agents! Let's create your character. What is your name, brave adventurer?")
-        elif userdata.game_state == "exploration":
-            # Describe current location
+        elif userdata.game_state == "exploration" and not combat_was_just_ended:
+            # Only describe location if not returning from combat
             location_desc = GameUtilities.describe_environment(userdata.current_location)
             self.session.say(location_desc)
     
     @function_tool
-    async def say_in_character_voice(self, context: RunContext_T, voice: str, dialogue: str):
+    async def say_in_character_voice(self, context: RunContext_T, voice: str, dialogue: str, character_name: str):
         """Say dialogue in a specific character voice for NPCs or other characters
         
         Available voices: Mark, Ashley, Deborah, Olivia, Dennis
+        character_name: The name of the character speaking (e.g., "barkeep", "merchant", "goblin")
         """
         # Store the current voice
         original_voice = "Hades"  # Default narrator voice
         
         # Validate voice selection
-        available_voices = ["Mark", "Ashley", "Deborah", "Olivia", "Dennis"]
+        available_voices = ["Mark", "Ashley", "Deborah", "Olivia", "Dennis", "Timothy"]
         if voice not in available_voices:
             return f"Voice '{voice}' not available. Choose from: {', '.join(available_voices)}"
+        
+        # Update voice acting state and emit portrait change
+        userdata = context.userdata
+        userdata.voice_acting_character = character_name.lower()
+        await self.emit_state_update("voice_acting_start", {
+            "character_name": character_name.lower(),
+            "voice": voice
+        })
         
         # Change to the character voice
         self.tts.update_options(voice=voice)
@@ -66,11 +150,14 @@ class NarratorAgent(BaseGameAgent):
         # Return to narrator voice
         self.tts.update_options(voice=original_voice)
         
-        # Log the voice acting for story context
-        userdata = context.userdata
-        userdata.add_story_event(f"Character spoke in {voice}'s voice: '{dialogue}'")
+        # Clear voice acting state and emit portrait return
+        userdata.voice_acting_character = None
+        await self.emit_state_update("voice_acting_end", {})
         
-        return f"*speaks in {voice}'s voice*"
+        # Log the voice acting for story context
+        userdata.add_story_event(f"{character_name} spoke in {voice}'s voice: '{dialogue}'")
+        
+        return f"*{character_name} speaks*"
     
     @function_tool
     async def create_character(self, context: RunContext_T, name: str, character_class: str = "warrior"):
@@ -106,8 +193,8 @@ class NarratorAgent(BaseGameAgent):
         # Give starting equipment
         starting_gear = {
             CharacterClass.WARRIOR: [
-                Item("iron sword", "A sturdy blade", "weapon", {"damage": "1d8+1"}),
-                Item("leather armor", "Basic protection", "armor", {"ac_bonus": 2})
+                Item("Vorpal Blade of the Tester", "An overpowered blade", "weapon", {"damage": "3d6+3"}),
+                Item("Armor of the Tester", "A magical armor that protects you from all attacks", "armor", {"ac_bonus": 20}),
             ],
             CharacterClass.MAGE: [
                 Item("wooden staff", "A focus for magic", "weapon", {"damage": "1d6"}),
@@ -205,12 +292,6 @@ class NarratorAgent(BaseGameAgent):
             userdata.game_state = "dialogue"
             logger.info(f"Set active_npc to: {npc.name} (class: {npc.character_class.value})")
             
-            # Emit state update for portrait change
-            await self.emit_state_update("npc_dialogue_start", {
-                "npc_name": npc.name,
-                "npc_class": npc.character_class.value
-            })
-            
             charisma_mod = userdata.player_character.stats.get_modifier("charisma")
             reaction = npc.get_reaction(charisma_mod)
             dialogue = npc.get_dialogue("greeting")
@@ -261,11 +342,6 @@ class NarratorAgent(BaseGameAgent):
             userdata.active_npc = None
             userdata.game_state = "exploration"
             
-            # Emit state update for portrait change
-            await self.emit_state_update("npc_dialogue_end", {
-                "npc_name": npc_name
-            })
-            
             return f"You bid farewell to {npc_name} and step back."
         else:
             return "You're not talking to anyone right now."
@@ -281,8 +357,6 @@ class NarratorAgent(BaseGameAgent):
         if userdata.active_npc:
             userdata.active_npc = None
         
-        # Always emit state update for portrait change when exploring
-        await self.emit_state_update("exploration_start", {})
         userdata.game_state = "exploration"
         
         # Simple location system - this could be enhanced with dynamic generation
@@ -434,7 +508,7 @@ class NarratorAgent(BaseGameAgent):
         # Create enemies based on type
         enemies = []
         enemy_configs = {
-            "goblin": (CharacterClass.WARRIOR, 1, "hostile", "Small but vicious"),
+            "goblin": (CharacterClass.WARRIOR, 1, "hostile", "Don't underestimate them!"),
             "orc": (CharacterClass.WARRIOR, 2, "hostile", "Large and brutal"),
             "bandit": (CharacterClass.ROGUE, 2, "hostile", "Quick and cunning"),
             "skeleton": (CharacterClass.WARRIOR, 1, "hostile", "Undead warrior"),

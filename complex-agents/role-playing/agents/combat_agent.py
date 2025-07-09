@@ -42,7 +42,11 @@ class CombatAgent(BaseGameAgent):
             
             current_char = userdata.combat_state.get_current_character()
             if current_char == userdata.player_character:
-                self.session.say("It's your turn! You can attack, defend, cast a spell, use an item, or try to flee!")
+                # Queue player turn message
+                userdata.combat_state.action_queue.put(
+                    CombatAction(message="It's your turn! You can attack, defend, cast a spell, use an item, or try to flee!", delay=0.0)
+                )
+                await self._process_action_queue()
             else:
                 await self._queue_npc_turn()
                 await self._process_action_queue()
@@ -75,7 +79,7 @@ class CombatAgent(BaseGameAgent):
             if not current_char or current_char == userdata.player_character:
                 if current_char == userdata.player_character:
                     combat_state.action_queue.put(
-                        CombatAction(message="It's your turn! What do you do?", delay=0.5)
+                        CombatAction(message="It's your turn! You can attack, defend, cast a spell, use an item, or try to flee!", delay=0.5)
                     )
                 break
             
@@ -113,22 +117,34 @@ class CombatAgent(BaseGameAgent):
             "damage": damage
         })
         
-        # Create a cleaner description for TTS
+        # Create a cinematic description for TTS
         if hit:
             if damage > 0:
-                tts_description = f"{npc.name} strikes you for {damage} damage!"
+                # Get weapon description for NPCs
+                weapon_action = "strikes with their weapon"
+                if npc.equipped_weapon:
+                    weapon_action = f"slashes with their {npc.equipped_weapon.name}"
+                elif "goblin" in npc.name.lower():
+                    weapon_action = "stabs with a rusty blade"
+                elif "orc" in npc.name.lower():
+                    weapon_action = "swings a massive club"
+                
+                tts_description = f"{npc.name} {weapon_action}! You take {damage} damage"
+                
                 if userdata.player_character.current_health <= 0:
-                    tts_description += " You have been defeated!"
+                    tts_description += " and fall to your knees. You have been defeated!"
                 else:
                     health_percent = (userdata.player_character.current_health / userdata.player_character.max_health) * 100
                     if health_percent < 25:
-                        tts_description += " You're badly wounded!"
+                        tts_description += "! You're gravely wounded!"
                     elif health_percent < 50:
-                        tts_description += " You're taking heavy damage!"
+                        tts_description += "! Pain shoots through your body!"
+                    else:
+                        tts_description += "!"
             else:
-                tts_description = f"{npc.name} hits but deals no damage."
+                tts_description = f"{npc.name}'s attack glances off your armor!"
         else:
-            tts_description = f"{npc.name} swings and misses!"
+            tts_description = f"You dodge {npc.name}'s attack!"
         
         # Queue the NPC action
         combat_state.action_queue.put(CombatAction(message=tts_description, delay=0.3))
@@ -210,18 +226,25 @@ class CombatAgent(BaseGameAgent):
             "damage": damage
         })
         
-        # Create cleaner response for TTS
+        # Create cinematic response for TTS
         if hit:
             if damage > 0:
-                response = f"You hit {target.name} for {damage} damage!"
+                # Get weapon name for flavor
+                weapon_name = userdata.player_character.equipped_weapon.name if userdata.player_character.equipped_weapon else "weapon"
+                response = f"Your {weapon_name} strikes true! {target.name} takes {damage} damage"
+                
                 if target.current_health <= 0:
-                    response += f" {target.name} has been defeated!"
+                    response += f" and falls to the ground, defeated!"
+                elif target.current_health < target.max_health * 0.25:
+                    response += f"! {target.name} is barely standing!"
+                elif target.current_health < target.max_health * 0.5:
+                    response += f"! {target.name} is badly wounded!"
                 else:
-                    response += f" {target.name} has {target.current_health} health remaining."
+                    response += "!"
             else:
-                response = f"You hit {target.name} but deal no damage."
+                response = f"Your attack connects but {target.name}'s armor absorbs the blow!"
         else:
-            response = f"You swing at {target.name} but miss!"
+            response = f"{target.name} dodges your attack!"
         
         # Queue the player's attack result
         combat_state.action_queue.put(CombatAction(message=response, delay=0.0))
@@ -231,6 +254,10 @@ class CombatAgent(BaseGameAgent):
             logger.info(f"Enemy {target.name} defeated, removing from combat")
             logger.info(f"Before removal - initiative_order: {[c.name for c in combat_state.initiative_order]}")
             logger.info(f"Combat state before removal - is_complete: {combat_state.is_complete}")
+            
+            # Track defeated enemy for XP calculation
+            combat_state.defeated_enemies.append(target)
+            logger.info(f"Added {target.name} (level {target.level}) to defeated enemies list")
             
             combat_state.remove_defeated(target)
             userdata.current_npcs.remove(target)
@@ -247,13 +274,6 @@ class CombatAgent(BaseGameAgent):
             # Check if combat is over
             if combat_state.is_complete:
                 logger.info("Combat is complete, ending combat and returning to narrator")
-                # Queue victory message and process queue before ending combat
-                victory_action = CombatAction(
-                    message="Victory! The battle is won!",
-                    delay=0.5
-                )
-                combat_state.action_queue.put(victory_action)
-                await self._process_action_queue()
                 # End combat and switch to narrator
                 result = await self._end_combat(context, victory=True)
                 return result
@@ -267,7 +287,7 @@ class CombatAgent(BaseGameAgent):
         # Process the action queue
         await self._process_action_queue()
         
-        return "Action completed"
+        return None
     
     @function_tool
     async def defend(self, context: RunContext_T):
@@ -295,7 +315,7 @@ class CombatAgent(BaseGameAgent):
         await self._queue_npc_turn()
         await self._process_action_queue()
         
-        return "Action completed"
+        return None
     
     @function_tool
     async def cast_spell(self, context: RunContext_T, spell_name: str, target_name: str = None):
@@ -329,17 +349,20 @@ class CombatAgent(BaseGameAgent):
         
         # Check if any enemies defeated
         for enemy in list(self._get_active_enemies(userdata)):
+            logger.info(f"Checking enemy {enemy.name}: health = {enemy.current_health}")
             if enemy.current_health <= 0:
+                logger.info(f"Enemy {enemy.name} defeated! Removing from combat.")
+                # Track defeated enemy for XP calculation
+                combat_state.defeated_enemies.append(enemy)
+                logger.info(f"Added {enemy.name} (level {enemy.level}) to defeated enemies list")
                 combat_state.remove_defeated(enemy)
                 userdata.current_npcs.remove(enemy)
         
+        logger.info(f"Checking if combat is complete: {combat_state.is_complete}")
+        logger.info(f"Remaining enemies in combat: {[e.name for e in self._get_active_enemies(userdata)]}")
+        
         if combat_state.is_complete:
-            victory_action = CombatAction(
-                message="Victory! All enemies have been vanquished!",
-                delay=0.5
-            )
-            combat_state.action_queue.put(victory_action)
-            await self._process_action_queue()
+            logger.info("Combat is complete! Ending combat...")
             result = await self._end_combat(context, victory=True)
             return result
         
@@ -350,7 +373,7 @@ class CombatAgent(BaseGameAgent):
         await self._queue_npc_turn()
         await self._process_action_queue()
         
-        return "Action completed"
+        return None
     
     @function_tool
     async def use_combat_item(self, context: RunContext_T, item_name: str):
@@ -381,7 +404,7 @@ class CombatAgent(BaseGameAgent):
         await self._queue_npc_turn()
         await self._process_action_queue()
         
-        return "Action completed"
+        return None
     
     @function_tool
     async def flee_combat(self, context: RunContext_T):
@@ -416,40 +439,59 @@ class CombatAgent(BaseGameAgent):
             await self._queue_npc_turn()
             await self._process_action_queue()
             
-            return "Action completed"
+            return None
     
     async def _end_combat(self, context: RunContext_T, victory: bool, fled: bool = False):
         """End combat and return to narrator"""
         userdata = context.userdata
         
         if victory and not fled:
-            # Calculate rewards
-            total_xp = sum(enemy.level * 50 for enemy in userdata.current_npcs if enemy.current_health <= 0)
+            # Calculate rewards from defeated enemies tracked during combat
+            combat_state = userdata.combat_state
+            total_xp = sum(enemy.level * 50 for enemy in combat_state.defeated_enemies)
+            logger.info(f"Calculating XP from {len(combat_state.defeated_enemies)} defeated enemies")
+            logger.info(f"Defeated enemies: {[(e.name, e.level) for e in combat_state.defeated_enemies]}")
+            logger.info(f"Total XP earned: {total_xp}")
+            
             all_loot = []
             total_gold = 0
             
             # Transfer loot from defeated enemies
-            for enemy in userdata.current_npcs:
-                if enemy.current_health <= 0:
-                    loot_desc = GameUtilities.transfer_loot(enemy, userdata.player_character)
-                    if "gold" in loot_desc:
-                        # Extract gold amount for total
-                        gold_match = re.search(r'(\d+) gold', loot_desc)
-                        if gold_match:
-                            total_gold += int(gold_match.group(1))
-                    
-                    # Also add any specific items mentioned
-                    if loot_desc != "The enemy had nothing of value.":
-                        all_loot.append(f"From {enemy.name}: {loot_desc}")
+            for enemy in combat_state.defeated_enemies:
+                loot_desc = GameUtilities.transfer_loot(enemy, userdata.player_character)
+                if "gold" in loot_desc:
+                    # Extract gold amount for total
+                    gold_match = re.search(r'(\d+) gold', loot_desc)
+                    if gold_match:
+                        total_gold += int(gold_match.group(1))
+                
+                # Extract actual items from loot description
+                if loot_desc != "The enemy had nothing of value.":
+                    # Remove "You found: " prefix and just store the items
+                    clean_loot = loot_desc.replace("You found: ", "")
+                    # Don't include gold in the loot list since we track it separately
+                    if "gold" in clean_loot and not any(word in clean_loot for word in ["golden", "gold-"]):
+                        # Extract non-gold items
+                        parts = clean_loot.split(" and ")
+                        for part in parts:
+                            if "gold" not in part or any(word in part for word in ["golden", "gold-"]):
+                                all_loot.append(part.strip())
+                    else:
+                        all_loot.append(clean_loot)
             
             # Grant experience
             level_up_msg = userdata.player_character.gain_experience(total_xp)
             
-            result = f"Victory! You earned {total_xp} experience points."
-            if level_up_msg:
-                result += f" {level_up_msg}"
-            if all_loot:
-                result += f"\n\nLoot collected:\n" + "\n".join(all_loot)
+            # Store combat results for narrator
+            userdata.combat_result = {
+                "xp_gained": total_xp,
+                "level_up": level_up_msg,
+                "loot": all_loot,
+                "gold_gained": total_gold,
+                "defeated_enemies": [(e.name, e.level) for e in combat_state.defeated_enemies]
+            }
+            
+            # No need to build result message - narrator will handle it
             
             # Emit inventory update after loot collection
             await self.emit_state_update("inventory_changed", {
@@ -471,10 +513,8 @@ class CombatAgent(BaseGameAgent):
             
             userdata.add_story_event(f"Won combat - gained {total_xp} XP")
         elif fled:
-            result = "You successfully fled from combat!"
             userdata.add_story_event("Fled from combat")
         else:
-            result = "You have been defeated..."
             userdata.game_state = "game_over"
         
         # Clean up combat state
@@ -489,14 +529,15 @@ class CombatAgent(BaseGameAgent):
         # Store current agent for context preservation
         userdata.prev_agent = self
         
-        # Say the result
-        self.session.say(result)
+        # Set flag for narrator to know combat just ended
+        userdata.combat_just_ended = True
         
-        # Switch back to narrator agent
+        # Don't say anything - let the narrator handle all messaging
+        # Just switch back to narrator agent
         from agents.narrator_agent import NarratorAgent
         self.session.update_agent(NarratorAgent())
         
-        return result
+        return "Combat ended"
     
     @function_tool
     async def check_combat_status(self, context: RunContext_T):

@@ -157,28 +157,21 @@ async def entrypoint(ctx: JobContext):
             return json.dumps({"success": False, "error": str(e)})
     
     async def get_current_context(data: RpcInvocationData) -> str:
-        """Get current conversation context (agent type, active NPC, etc)"""
+        """Get current conversation context (agent type, voice acting character, etc)"""
         try:
-            logger.info(f"get_current_context called - active_npc: {userdata.active_npc.name if userdata.active_npc else 'None'}")
+            logger.info(f"get_current_context called - voice_acting_character: {userdata.voice_acting_character if userdata.voice_acting_character else 'None'}")
             
             response = {
                 "success": True,
                 "data": {
                     "agent_type": userdata.current_agent_type,
                     "game_state": userdata.game_state,
-                    "active_npc": None,
+                    "voice_acting_character": userdata.voice_acting_character,
                     "in_combat": userdata.combat_state is not None
                 }
             }
             
-            # Check if we're in dialogue with a specific NPC
-            if userdata.active_npc:
-                response["data"]["active_npc"] = {
-                    "name": userdata.active_npc.name.lower(),
-                    "class": userdata.active_npc.character_class.value,
-                    "disposition": userdata.active_npc.disposition
-                }
-                logger.info(f"Returning active_npc in response: {response['data']['active_npc']}")
+            logger.info(f"Returning context with voice_acting_character: {response['data']['voice_acting_character']}")
             
             return json.dumps(response)
         except Exception as e:

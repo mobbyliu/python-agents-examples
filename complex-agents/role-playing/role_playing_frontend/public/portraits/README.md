@@ -13,6 +13,7 @@ Place the following portrait images (PNG format, recommended size: 300x400 pixel
 ### NPC Portraits
 - `barkeep_card.png` - Tavern keeper portrait
 - `merchant_card.png` - Generic merchant portrait
+- `rogue_card.png` - Rogue NPC Card
 - `guard_card.png` - Town guard portrait
 - `villager_card.png` - Generic villager portrait
 
