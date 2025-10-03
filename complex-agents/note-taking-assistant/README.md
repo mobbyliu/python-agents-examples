@@ -1,4 +1,4 @@
-# Note Taking Assistant with Medical Notes Frontend
+# Medical Note Taking Assistant
 
 This demo shows a medical note-taking assistant that transcribes conversations between doctors and patients, generating structured medical notes in real-time.
 
