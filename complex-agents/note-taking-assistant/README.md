@@ -1,4 +1,6 @@
-# Medical Note Taking Assistant
+# PULSESNOTE: Medical Note Taking Assistant
+
+<img width="849" height="615" alt="Screenshot 2025-10-03 at 4 32 40 PM" src="https://github.com/user-attachments/assets/1e2ed5e5-cdc5-4625-90d5-dd67d9914edc" />
 
 This demo shows a medical note-taking assistant that transcribes conversations between doctors and patients, generating structured medical notes in real-time.
 
