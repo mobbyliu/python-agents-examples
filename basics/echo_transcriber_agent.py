@@ -29,25 +29,21 @@ logger.setLevel(logging.INFO)
 class EchoTranscriberAgent(Agent):
     def __init__(self) -> None:
         super().__init__(
-            instructions="You are an echo transcriber that listens and repeats audio.",
+            instructions="You are a real-time transcriber that shows live transcription as the user speaks.",
             stt="assemblyai/universal-streaming",
             vad=None,
             allow_interruptions=False
         )
         
         # We'll set these after initialization
-        self.audio_source = None
-        self.echo_track = None
         self.ctx = None
-        self.audio_buffer = []
+        self.current_transcript = ""
         self.custom_vad = silero.VAD.load(
-            min_speech_duration=0.2,
-            min_silence_duration=0.6,
+            min_speech_duration=0.1,  # 快速检测语音开始
+            min_silence_duration=0.3,  # 适中的静音检测
         )
         self.vad_stream = self.custom_vad.stream()
         self.is_speaking = False
-        self.is_echoing = False
-        self.audio_format_set = False
     
     async def on_enter(self):
         # Override to prevent default TTS greeting
@@ -56,40 +52,17 @@ class EchoTranscriberAgent(Agent):
     def set_context(self, ctx: JobContext):
         self.ctx = ctx
     
-    async def setup_audio_output(self):
-        if self.audio_format_set:
-            return
-            
-        self.audio_source = rtc.AudioSource(sample_rate=48000, num_channels=1)
-        self.echo_track = rtc.LocalAudioTrack.create_audio_track("echo", self.audio_source)
-        await self.ctx.room.local_participant.publish_track(
-            self.echo_track,
-            rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE),
-        )
-        self.audio_format_set = True
-    
     async def stt_node(self, audio: AsyncIterable[rtc.AudioFrame], model_settings: Optional[dict] = None) -> Optional[AsyncIterable[str]]:
-        """Intercept audio frames before STT processing"""
+        """Pass through audio while doing VAD detection"""
         
-        async def audio_with_buffer():
-            """Pass through audio while processing with VAD and buffering"""
-            first_frame = True
+        async def audio_with_vad():
+            """Pass through audio while processing with VAD"""
             async for frame in audio:
-                if first_frame:
-                    await self.setup_audio_output()
-                    first_frame = False
-                
-                if not self.is_echoing:
-                    self.vad_stream.push_frame(frame)
-                    
-                    self.audio_buffer.append(frame)
-                    
-                    if len(self.audio_buffer) > 1000:
-                        self.audio_buffer.pop(0)
-                
+                # 进行VAD检测
+                self.vad_stream.push_frame(frame)
                 yield frame
         
-        return super().stt_node(audio_with_buffer(), model_settings)
+        return super().stt_node(audio_with_vad(), model_settings)
 
 async def entrypoint(ctx: JobContext):
     await ctx.room.local_participant.set_attributes({"lk.agent.state": "listening"})
@@ -100,45 +73,36 @@ async def entrypoint(ctx: JobContext):
     
     @session.on("user_input_transcribed")
     def on_transcript(transcript):
+        # 实时显示转录文本
         if transcript.is_final:
-            logger.info(f"Transcribed: {transcript.transcript}")
+            # 最终结果：完整句子
+            agent.current_transcript = transcript.transcript
+            logger.info(f"Final: {transcript.transcript}")
+            # 更新房间属性显示最终转录
+            asyncio.create_task(ctx.room.local_participant.set_attributes({
+                "lk.agent.transcript": transcript.transcript,
+                "lk.agent.state": "transcribed"
+            }))
+        else:
+            # 中间结果：实时更新
+            logger.info(f"Live: {transcript.transcript}")
+            # 更新房间属性显示实时转录
+            asyncio.create_task(ctx.room.local_participant.set_attributes({
+                "lk.agent.transcript": transcript.transcript,
+                "lk.agent.state": "transcribing"
+            }))
     
     async def process_vad():
-        """Process VAD events"""
+        """Process VAD events for state tracking"""
         async for vad_event in agent.vad_stream:
-            if agent.is_echoing:
-                continue
-                
             if vad_event.type == VADEventType.START_OF_SPEECH:
                 agent.is_speaking = True
                 logger.info("VAD: Start of speech detected")
-                # Keep only recent frames (last 100 frames ~1 second)
-                if len(agent.audio_buffer) > 100:
-                    agent.audio_buffer = agent.audio_buffer[-100:]
+                await ctx.room.local_participant.set_attributes({"lk.agent.state": "speaking"})
                     
             elif vad_event.type == VADEventType.END_OF_SPEECH:
                 agent.is_speaking = False
-                agent.is_echoing = True
-                buffer_size = len(agent.audio_buffer)
-                logger.info(f"VAD: End of speech, echoing {buffer_size} frames")
-                
-                # Set state to speaking
-                await ctx.room.local_participant.set_attributes({"lk.agent.state": "speaking"})
-                
-                # Copy buffer to avoid modification during playback
-                frames_to_play = agent.audio_buffer.copy()
-                agent.audio_buffer.clear()
-                
-                # Play back all buffered audio
-                if agent.audio_source:
-                    for frame in frames_to_play:
-                        await agent.audio_source.capture_frame(frame)
-                else:
-                    logger.error("Audio source not initialized yet")
-                
-                agent.is_echoing = False
-                logger.info("Finished echoing")
-                
+                logger.info("VAD: End of speech detected")
                 await ctx.room.local_participant.set_attributes({"lk.agent.state": "listening"})
     
     # Start VAD processing
