@@ -122,91 +122,70 @@ export function MediaTiles({ chatOpen }: MediaTilesProps) {
   const isAvatar = agentVideoTrack !== undefined;
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-8 bottom-32 z-50 md:top-12 md:bottom-40">
-      <div className="relative mx-auto h-full max-w-2xl px-4 md:px-0">
-        <div className={cn(classNames.grid)}>
-          {/* agent */}
-          <div
-            className={cn([
-              'grid',
-              // 'bg-[hotpink]', // for debugging
-              !chatOpen && classNames.agentChatClosed,
-              chatOpen && hasSecondTile && classNames.agentChatOpenWithSecondTile,
-              chatOpen && !hasSecondTile && classNames.agentChatOpenWithoutSecondTile,
-            ])}
-          >
-            <AnimatePresence mode="popLayout">
-              {!isAvatar && (
-                // audio-only agent
-                <MotionAgentTile
-                  key="agent"
-                  layoutId="agent"
-                  {...animationProps}
-                  animate={agentAnimate}
-                  transition={agentLayoutTransition}
-                  state={agentState}
-                  audioTrack={agentAudioTrack}
-                  className={cn(chatOpen ? 'h-[90px]' : 'h-auto w-full')}
-                />
-              )}
-              {isAvatar && (
-                // avatar agent
-                <MotionAvatarTile
-                  key="avatar"
-                  layoutId="avatar"
-                  {...animationProps}
-                  animate={avatarAnimate}
-                  transition={avatarLayoutTransition}
-                  videoTrack={agentVideoTrack}
-                  className={cn(
-                    chatOpen ? 'h-[90px] [&>video]:h-[90px] [&>video]:w-auto' : 'h-auto w-full'
-                  )}
-                />
-              )}
-            </AnimatePresence>
-          </div>
+    <div className="pointer-events-none fixed inset-0 z-50">
+      {/* Audio Visualizer - Fixed to bottom right corner */}
+      <div className="absolute right-4 bottom-20 md:right-8 md:bottom-24">
+        <AnimatePresence mode="popLayout">
+          {!isAvatar && (
+            // audio-only agent - compact size in corner
+            <MotionAgentTile
+              key="agent"
+              layoutId="agent"
+              {...animationProps}
+              animate={{
+                ...animationProps.animate,
+                transition: animationProps.transition,
+              }}
+              transition={agentLayoutTransition}
+              state={agentState}
+              audioTrack={agentAudioTrack}
+              className="h-[60px]"
+            />
+          )}
+          {isAvatar && (
+            // avatar agent - compact size in corner
+            <MotionAvatarTile
+              key="avatar"
+              layoutId="avatar"
+              {...animationProps}
+              animate={{
+                ...animationProps.animate,
+                transition: animationProps.transition,
+              }}
+              transition={avatarLayoutTransition}
+              videoTrack={agentVideoTrack}
+              className="h-[60px] [&>video]:h-[60px] [&>video]:w-auto"
+            />
+          )}
+        </AnimatePresence>
+      </div>
 
-          <div
-            className={cn([
-              'grid',
-              chatOpen && classNames.secondTileChatOpen,
-              !chatOpen && classNames.secondTileChatClosed,
-            ])}
-          >
-            {/* camera */}
-            <AnimatePresence>
-              {cameraTrack && isCameraEnabled && (
-                <MotionVideoTile
-                  key="camera"
-                  layout="position"
-                  layoutId="camera"
-                  {...animationProps}
-                  trackRef={cameraTrack}
-                  transition={{
-                    ...animationProps.transition,
-                    delay: chatOpen ? 0 : 0.15,
-                  }}
-                  className="h-[90px]"
-                />
-              )}
-              {/* screen */}
-              {isScreenShareEnabled && (
-                <MotionVideoTile
-                  key="screen"
-                  layout="position"
-                  layoutId="screen"
-                  {...animationProps}
-                  trackRef={screenShareTrack}
-                  transition={{
-                    ...animationProps.transition,
-                    delay: chatOpen ? 0 : 0.15,
-                  }}
-                  className="h-[90px]"
-                />
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
+      {/* Camera/Screen Share - top right corner */}
+      <div className="absolute right-4 top-20 md:right-8 md:top-24">
+        <AnimatePresence>
+          {cameraTrack && isCameraEnabled && (
+            <MotionVideoTile
+              key="camera"
+              layout="position"
+              layoutId="camera"
+              {...animationProps}
+              trackRef={cameraTrack}
+              transition={animationProps.transition}
+              className="h-[120px] rounded-lg overflow-hidden shadow-lg"
+            />
+          )}
+          {isScreenShareEnabled && (
+            <MotionVideoTile
+              key="screen"
+              layout="position"
+              layoutId="screen"
+              {...animationProps}
+              trackRef={screenShareTrack}
+              transition={animationProps.transition}
+              className="h-[120px] rounded-lg overflow-hidden shadow-lg"
+            />
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

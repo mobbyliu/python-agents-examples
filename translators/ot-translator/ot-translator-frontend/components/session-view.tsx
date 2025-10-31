@@ -123,9 +123,9 @@ export const SessionView = ({
         <div className="from-background absolute bottom-0 left-0 h-12 w-full translate-y-full bg-gradient-to-b to-transparent" />
       </div>
 
-      {/* Translation Display - Desktop Sidebar */}
+      {/* Translation Display - Centered with padding for audio visualizer */}
       {sessionStarted && (
-        <div className="fixed left-0 top-32 bottom-0 w-80 p-4 hidden lg:block z-40 bg-background/80 backdrop-blur-sm border-r border-border">
+        <div className="fixed left-1/2 -translate-x-1/2 top-32 bottom-28 w-full max-w-4xl px-4 py-4 hidden lg:block z-40 bg-background/80 backdrop-blur-sm border-x border-border">
           <TranslationDisplay className="h-full" />
         </div>
       )}

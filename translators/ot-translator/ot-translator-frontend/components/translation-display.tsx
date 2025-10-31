@@ -136,11 +136,12 @@ export function TranslationDisplay({ className }: TranslationDisplayProps) {
 
         {conversation.map((item, index) => (
           <div key={index} className="space-y-2">
-            {/* 原始文本 - 只显示非中文原文 */}
-            {item.original.language !== 'zh' && (
+            {/* 原始文本 - 有翻译时总是显示原文，无翻译时只显示非中文原文 */}
+            {(item.translation || item.original.language !== 'zh') && (
               <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded-lg border border-gray-300">
                 <div className="text-xs text-muted-foreground mb-1">
                   {getLanguageLabel(item.original.language)}
+                  {item.translation && <span className="ml-2 text-gray-500">(原文)</span>}
                 </div>
                 <p className="text-base whitespace-pre-wrap break-words font-mono">
                   {item.original.text}
@@ -177,11 +178,12 @@ export function TranslationDisplay({ className }: TranslationDisplayProps) {
         {/* 实时预览（interim 状态） */}
         {isInterim && (
           <div className="space-y-2">
-            {/* 原始文本预览 - 只显示非中文原文（英语/法语等） */}
-            {interimOriginalLang !== 'zh' && interimOriginal && (
+            {/* 原始文本预览 - 有翻译时总是显示原文，无翻译时只显示非中文原文 */}
+            {(interimTranslation || interimOriginalLang !== 'zh') && interimOriginal && (
               <div className="bg-blue-50 dark:bg-blue-950 p-3 rounded-lg border-2 border-blue-300 border-dashed">
                 <div className="text-xs text-muted-foreground mb-1 flex items-center gap-2">
                   {getLanguageLabel(interimOriginalLang)}
+                  {interimTranslation && <span className="text-gray-500">(原文)</span>}
                   <span className="text-blue-500 animate-pulse text-xs">实时输入中...</span>
                 </div>
                 <p className="text-base whitespace-pre-wrap break-words font-mono">
