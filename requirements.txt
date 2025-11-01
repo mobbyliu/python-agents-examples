@@ -12,3 +12,4 @@ rich
 mcp
 librosa
 moondream
+google-cloud-translate>=3.0.0

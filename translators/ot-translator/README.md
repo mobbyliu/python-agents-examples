@@ -1,8 +1,24 @@
 # OT Translator: Real-time Translation Display
 
+A real-time translation system with **two implementation options**:
+
+## 📌 Available Versions
+
+### 1. Gladia Version (`agent.py`) - All-in-One Solution
+Uses Gladia STT with built-in translation capabilities. Best for quick prototyping.
+
+### 2. Deepgram + Google Translate Version (`deepgram_translator_agent.py`) - Flexible Production Setup
+Uses Deepgram STT for speech recognition and Google Cloud Translate API for translation. Best for production with configurable languages and cost optimization.
+
+**👉 For detailed setup and usage of the Deepgram version, see [DEEPGRAM_README.md](./DEEPGRAM_README.md)**
+
+---
+
+## Gladia Version Quick Start
+
 A real-time translation system that uses Gladia STT with code switching to translate between multiple languages (French, English, Chinese) and displays the translations on a web interface.
 
-## Features
+### Features
 
 - **Multi-language Support**: Supports French, English, and Chinese input
 - **Code Switching**: Automatically detects and switches between languages
@@ -10,13 +26,13 @@ A real-time translation system that uses Gladia STT with code switching to trans
 - **Web Interface**: Displays original text and translations on a web frontend
 - **RPC Communication**: Uses LiveKit RPC for real-time updates from backend to frontend
 
-## Architecture
+### Architecture
 
 - **Backend Agent**: Python agent that handles speech recognition and translation using Gladia STT
 - **Frontend**: Next.js application displaying original text and translations in real-time
 - **Communication**: Uses LiveKit RPC (WebRTC DataChannel) for real-time updates
 
-## Running the Application
+### Running the Gladia Version
 
 ### Backend Agent
 
@@ -48,6 +64,23 @@ pnpm dev
 ```
 
 4. Open your browser to http://localhost:3000
+
+---
+
+## Comparison: Gladia vs Deepgram + Google Translate
+
+| Feature | Gladia Version | Deepgram + Google Translate |
+|---------|---------------|----------------------------|
+| **STT Provider** | Gladia | Deepgram |
+| **Translation** | Gladia built-in | Google Cloud Translate |
+| **Language Config** | Code only | UI + Code (dynamic) |
+| **Debounce Optimization** | No | Yes (configurable) |
+| **Language Support** | Limited | 100+ languages |
+| **Cost Structure** | All-in-one pricing | Separate STT + Translation |
+| **Setup Complexity** | Simple | Moderate (requires Google Cloud) |
+| **Best For** | Quick prototyping | Production, flexible configs |
+
+---
 
 ## Usage
 

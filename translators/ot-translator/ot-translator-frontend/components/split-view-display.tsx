@@ -3,7 +3,6 @@
 import { useMaybeRoomContext } from '@livekit/components-react';
 import { RpcInvocationData } from 'livekit-client';
 import { useEffect, useRef, useState } from 'react';
-import { useTypewriter } from '@/hooks/useTypewriter';
 
 export interface TranslationData {
   type: 'interim' | 'final';
@@ -22,39 +21,71 @@ export interface SplitViewDisplayProps {
   className?: string;
 }
 
+// 支持的语言列表
+const SUPPORTED_LANGUAGES = [
+  { code: 'en', name: '英语 (English)' },
+  { code: 'zh', name: '中文 (Chinese)' },
+  { code: 'fr', name: '法语 (French)' },
+  { code: 'es', name: '西班牙语 (Spanish)' },
+  { code: 'de', name: '德语 (German)' },
+  { code: 'ja', name: '日语 (Japanese)' },
+  { code: 'ko', name: '韩语 (Korean)' },
+  { code: 'pt', name: '葡萄牙语 (Portuguese)' },
+  { code: 'ru', name: '俄语 (Russian)' },
+  { code: 'ar', name: '阿拉伯语 (Arabic)' },
+];
+
 export function SplitViewDisplay({ className }: SplitViewDisplayProps) {
-  // 原文区域：累积的 final 原文 + 当前 interim
+  // 原文区域：累积的文本 + 当前显示的文本
   const [accumulatedOriginal, setAccumulatedOriginal] = useState<string>('');
-  const [latestOriginal, setLatestOriginal] = useState<string>('');
-  const [currentInterim, setCurrentInterim] = useState<string>('');
+  const [currentOriginal, setCurrentOriginal] = useState<string>('');
+  const [originalHighlights, setOriginalHighlights] = useState<number[]>([]);
   const [currentLanguage, setCurrentLanguage] = useState<string>('');
   
-  // 译文区域：累积的所有 final 译文
+  // 译文区域：累积的文本 + 当前显示的文本
   const [accumulatedTranslation, setAccumulatedTranslation] = useState<string>('');
-  const [latestTranslation, setLatestTranslation] = useState<string>('');
-  
-  // 打字机模式
-  const [originalTypewriterMode, setOriginalTypewriterMode] = useState<'character' | 'word'>('character');
-  const [translationTypewriterMode, setTranslationTypewriterMode] = useState<'character' | 'word'>('character');
-  
-  // 控制是否显示实时输入（interim）
-  const [showInterim, setShowInterim] = useState<boolean>(true);
+  const [currentTranslation, setCurrentTranslation] = useState<string>('');
+  const [translationHighlights, setTranslationHighlights] = useState<number[]>([]);
   
   const room = useMaybeRoomContext();
   const originalScrollRef = useRef<HTMLDivElement>(null);
   const translationScrollRef = useRef<HTMLDivElement>(null);
-
-  // 原文打字机效果（用于最新一句）
-  const { displayedText: displayedOriginal, isTyping: isTypingOriginal } = useTypewriter(latestOriginal, {
-    speed: originalTypewriterMode === 'character' ? 30 : 100,
-    mode: originalTypewriterMode,
+  
+  // 语言配置
+  const [sourceLanguage, setSourceLanguage] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('translation_source_language') || 'en';
+    }
+    return 'en';
   });
-
-  // 译文打字机效果（用于最新一句）
-  const { displayedText: displayedTranslation, isTyping: isTypingTranslation } = useTypewriter(latestTranslation, {
-    speed: translationTypewriterMode === 'character' ? 30 : 100,
-    mode: translationTypewriterMode,
+  const [targetLanguage, setTargetLanguage] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('translation_target_language') || 'zh';
+    }
+    return 'zh';
   });
+  const [debounceMs, setDebounceMs] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('translation_debounce_ms');
+      return saved ? parseInt(saved) : 500;
+    }
+    return 500;
+  });
+  const [showConfig, setShowConfig] = useState<boolean>(false);
+  
+  // 计算文本差异的位置（用于高亮）
+  const findDifferentIndices = (oldText: string, newText: string): number[] => {
+    const indices: number[] = [];
+    const maxLen = Math.max(oldText.length, newText.length);
+    
+    for (let i = 0; i < maxLen; i++) {
+      if (oldText[i] !== newText[i]) {
+        indices.push(i);
+      }
+    }
+    
+    return indices;
+  };
 
   // Register RPC handler for receiving translation updates
   useEffect(() => {
@@ -69,34 +100,61 @@ export function SplitViewDisplay({ className }: SplitViewDisplayProps) {
         if (payload && payload.original) {
           // 原文处理
           if (payload.type === 'interim') {
-            // interim：更新当前 interim（覆盖，不累积）
-            setCurrentInterim(payload.original.text);
+            // interim：直接更新当前文本，实时显示
+            setCurrentOriginal(payload.original.text);
             setCurrentLanguage(payload.original.language);
           } else if (payload.type === 'final') {
-            // final：追加到累积原文，设置最新原文，清空 interim
+            // final：检查差异，高亮后确认
             const newOriginal = payload.original.text;
             
+            if (newOriginal !== currentOriginal) {
+              // 有差异：高亮不同部分
+              const diffIndices = findDifferentIndices(currentOriginal, newOriginal);
+              setOriginalHighlights(diffIndices);
+              
+              // 300ms 后清除高亮
+              setTimeout(() => setOriginalHighlights([]), 300);
+            }
+            
+            // 更新文本
+            setCurrentOriginal(newOriginal);
+            
+            // 追加到历史记录
             setAccumulatedOriginal((prev) => {
               const separator = prev ? '\n\n' : '';
               return prev + separator + newOriginal;
             });
-            setLatestOriginal(newOriginal);
-            setCurrentInterim('');
+            
             setCurrentLanguage(payload.original.language);
           }
 
-          // 译文处理：只处理有翻译的 final
-          if (payload.type === 'final' && payload.translation) {
-            const newTranslation = payload.translation.text;
-            
-            // 追加到累积译文
-            setAccumulatedTranslation((prev) => {
-              const separator = prev ? '\n\n' : '';
-              return prev + separator + newTranslation;
-            });
-            
-            // 设置最新译文，触发打字机效果
-            setLatestTranslation(newTranslation);
+          // 译文处理
+          if (payload.translation) {
+            if (payload.type === 'interim') {
+              // interim 翻译：直接更新当前译文，实时显示
+              setCurrentTranslation(payload.translation.text);
+            } else if (payload.type === 'final') {
+              // final 翻译：检查差异，高亮后确认
+              const newTranslation = payload.translation.text;
+              
+              if (newTranslation !== currentTranslation) {
+                // 有差异：高亮不同部分
+                const diffIndices = findDifferentIndices(currentTranslation, newTranslation);
+                setTranslationHighlights(diffIndices);
+                
+                // 300ms 后清除高亮
+                setTimeout(() => setTranslationHighlights([]), 300);
+              }
+              
+              // 更新文本
+              setCurrentTranslation(newTranslation);
+              
+              // 追加到历史记录
+              setAccumulatedTranslation((prev) => {
+                const separator = prev ? '\n\n' : '';
+                return prev + separator + newTranslation;
+              });
+            }
           }
 
           return 'Success: Translation received';
@@ -124,16 +182,19 @@ export function SplitViewDisplay({ className }: SplitViewDisplayProps) {
     if (originalScrollRef.current) {
       originalScrollRef.current.scrollTop = originalScrollRef.current.scrollHeight;
     }
-  }, [accumulatedOriginal, currentInterim, displayedOriginal]);
+  }, [accumulatedOriginal, currentOriginal]);
 
   // 自动滚动到底部 - 译文区域
   useEffect(() => {
     if (translationScrollRef.current) {
       translationScrollRef.current.scrollTop = translationScrollRef.current.scrollHeight;
     }
-  }, [accumulatedTranslation, displayedTranslation]);
+  }, [accumulatedTranslation, currentTranslation]);
 
   const getLanguageLabel = (lang: string): string => {
+    const langObj = SUPPORTED_LANGUAGES.find(l => l.code === lang);
+    if (langObj) return langObj.name.split(' ')[0]; // 返回中文名称
+    
     const labels: Record<string, string> = {
       fr: '法语',
       en: '英语',
@@ -142,45 +203,189 @@ export function SplitViewDisplay({ className }: SplitViewDisplayProps) {
     return labels[lang] || lang.toUpperCase();
   };
 
-  // 计算要显示的完整原文（已完成的 + 正在打字的）
-  const getDisplayedOriginal = () => {
-    if (!accumulatedOriginal) {
-      return displayedOriginal;
+  // 更新配置并发送到后端
+  const updateTranslationConfig = async () => {
+    if (!room || !room.localParticipant) {
+      console.warn('Room not connected, cannot update config');
+      return;
     }
-    
-    const sentences = accumulatedOriginal.split('\n\n');
-    if (sentences.length === 0) return displayedOriginal;
-    
-    const completedSentences = sentences.slice(0, -1).join('\n\n');
-    
-    if (completedSentences) {
-      return completedSentences + '\n\n' + displayedOriginal;
+
+    try {
+      // 保存到 localStorage
+      localStorage.setItem('translation_source_language', sourceLanguage);
+      localStorage.setItem('translation_target_language', targetLanguage);
+      localStorage.setItem('translation_debounce_ms', debounceMs.toString());
+
+      // 发送配置到后端
+      const payload = {
+        source: sourceLanguage,
+        target: targetLanguage,
+        debounce: debounceMs,
+      };
+
+      const result = await room.localParticipant.performRpc({
+        destinationIdentity: '', // 发送到 agent
+        method: 'update_translation_config',
+        payload: JSON.stringify(payload),
+      });
+
+      console.log('Config updated successfully:', result);
+      setShowConfig(false);
+    } catch (error) {
+      console.error('Failed to update config:', error);
     }
-    return displayedOriginal;
   };
 
-  // 计算要显示的完整译文（已完成的 + 正在打字的）
-  const getDisplayedTranslation = () => {
-    if (!accumulatedTranslation) {
-      // 没有历史译文，只显示当前打字
-      return displayedTranslation;
+  // 初始化时发送配置到后端
+  useEffect(() => {
+    if (room && room.localParticipant && room.remoteParticipants.size > 0) {
+      // 延迟一下确保 agent 已经准备好
+      const timer = setTimeout(() => {
+        updateTranslationConfig();
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [room?.remoteParticipants.size]);
+
+  // 渲染带高亮的文本
+  const renderTextWithHighlights = (text: string, highlights: number[]) => {
+    if (highlights.length === 0) {
+      return text;
     }
     
-    // 有历史译文，需要显示历史 + 正在打字的新句子
-    const sentences = accumulatedTranslation.split('\n\n');
-    if (sentences.length === 0) return displayedTranslation;
+    return (
+      <>
+        {text.split('').map((char, index) => (
+          <span
+            key={index}
+            className={`${
+              highlights.includes(index)
+                ? 'bg-yellow-200 dark:bg-yellow-700 transition-colors duration-300'
+                : ''
+            }`}
+          >
+            {char}
+          </span>
+        ))}
+      </>
+    );
+  };
+
+  // 获取完整显示文本（累积的历史 + 当前句子）
+  const getFullOriginalText = () => {
+    if (!accumulatedOriginal && !currentOriginal) return '';
+    if (!accumulatedOriginal) return currentOriginal;
     
-    // 移除最后一句（因为它正在打字中）
+    const sentences = accumulatedOriginal.split('\n\n');
     const completedSentences = sentences.slice(0, -1).join('\n\n');
     
     if (completedSentences) {
-      return completedSentences + '\n\n' + displayedTranslation;
+      return completedSentences + '\n\n' + currentOriginal;
     }
-    return displayedTranslation;
+    return currentOriginal;
+  };
+
+  const getFullTranslationText = () => {
+    if (!accumulatedTranslation && !currentTranslation) return '';
+    if (!accumulatedTranslation) return currentTranslation;
+    
+    const sentences = accumulatedTranslation.split('\n\n');
+    const completedSentences = sentences.slice(0, -1).join('\n\n');
+    
+    if (completedSentences) {
+      return completedSentences + '\n\n' + currentTranslation;
+    }
+    return currentTranslation;
   };
 
   return (
     <div className={`flex flex-col h-full ${className || ''}`}>
+      {/* 配置面板 */}
+      {showConfig && (
+        <div className="bg-muted border-b border-border p-4">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold">翻译配置</h3>
+              <button
+                onClick={() => setShowConfig(false)}
+                className="text-muted-foreground hover:text-foreground text-sm"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* 源语言选择 */}
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">源语言</label>
+                <select
+                  value={sourceLanguage}
+                  onChange={(e) => setSourceLanguage(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-border rounded bg-background"
+                >
+                  {SUPPORTED_LANGUAGES.map((lang) => (
+                    <option key={lang.code} value={lang.code}>
+                      {lang.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              {/* 目标语言选择 */}
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">目标语言</label>
+                <select
+                  value={targetLanguage}
+                  onChange={(e) => setTargetLanguage(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-border rounded bg-background"
+                >
+                  {SUPPORTED_LANGUAGES.map((lang) => (
+                    <option key={lang.code} value={lang.code}>
+                      {lang.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              {/* 防抖延迟 */}
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">
+                  防抖延迟: {debounceMs}ms
+                </label>
+                <input
+                  type="range"
+                  min="100"
+                  max="1000"
+                  step="50"
+                  value={debounceMs}
+                  onChange={(e) => setDebounceMs(parseInt(e.target.value))}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                  <span>更快</span>
+                  <span>更稳</span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setShowConfig(false)}
+                className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
+              >
+                取消
+              </button>
+              <button
+                onClick={updateTranslationConfig}
+                className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded hover:opacity-90"
+              >
+                保存配置
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* 上半部分：原文区域 */}
       <div className="flex-1 flex flex-col border-b-2 border-border min-h-0">
         <div className="bg-muted px-4 py-2 border-b border-border flex-shrink-0 flex items-center justify-between">
@@ -192,74 +397,30 @@ export function SplitViewDisplay({ className }: SplitViewDisplayProps) {
           </h3>
           
           <div className="flex items-center gap-3">
-            {/* 实时输入开关 */}
-            <label className="flex items-center gap-1.5 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showInterim}
-                onChange={(e) => setShowInterim(e.target.checked)}
-                className="w-3.5 h-3.5 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0 cursor-pointer"
-              />
-              <span className="text-xs text-muted-foreground">实时输入</span>
-            </label>
-            
-            {/* 打字机模式切换 */}
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setOriginalTypewriterMode('character')}
-                className={`px-2 py-1 text-xs rounded transition-colors ${
-                  originalTypewriterMode === 'character'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-background text-muted-foreground hover:text-foreground'
-                }`}
-                title="逐字符显示（较慢，戏剧性强）"
-              >
-                逐字
-              </button>
-              <button
-                onClick={() => setOriginalTypewriterMode('word')}
-                className={`px-2 py-1 text-xs rounded transition-colors ${
-                  originalTypewriterMode === 'word'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-background text-muted-foreground hover:text-foreground'
-                }`}
-                title="逐词显示（较快，流畅）"
-              >
-                逐词
-              </button>
-            </div>
+            {/* 配置按钮 */}
+            <button
+              onClick={() => setShowConfig(!showConfig)}
+              className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-background rounded transition-colors"
+              title="翻译配置"
+            >
+              ⚙️ 配置
+            </button>
           </div>
         </div>
         <div
           ref={originalScrollRef}
           className="flex-1 overflow-y-auto overflow-x-hidden p-6 bg-gray-50 dark:bg-gray-900 min-h-0"
         >
-          {!accumulatedOriginal && !displayedOriginal && !currentInterim && (
+          {!getFullOriginalText() && (
             <div className="text-center text-muted-foreground py-8">
               等待输入...
             </div>
           )}
           
-          {/* 完整原文（已完成的 + 正在打字的） */}
-          {(accumulatedOriginal || displayedOriginal) && (
+          {getFullOriginalText() && (
             <p className="text-base font-mono whitespace-pre-wrap break-words leading-relaxed">
-              {getDisplayedOriginal()}
-              {isTypingOriginal && (
-                <span className="inline-block w-0.5 h-5 bg-foreground ml-0.5 animate-pulse" />
-              )}
+              {renderTextWithHighlights(getFullOriginalText(), originalHighlights)}
             </p>
-          )}
-          
-          {/* 当前的 interim 文本（根据开关显示） */}
-          {showInterim && currentInterim && (
-            <div className={(accumulatedOriginal || displayedOriginal) ? 'mt-4' : ''}>
-              <div className="inline-block px-3 py-2 bg-blue-100 dark:bg-blue-950 border-2 border-blue-300 border-dashed rounded">
-                <span className="text-xs text-blue-500 animate-pulse mr-2">实时输入...</span>
-                <span className="text-base font-mono whitespace-pre-wrap break-words">
-                  {currentInterim}
-                </span>
-              </div>
-            </div>
           )}
         </div>
       </div>
@@ -267,51 +428,23 @@ export function SplitViewDisplay({ className }: SplitViewDisplayProps) {
       {/* 下半部分：译文区域 */}
       <div className="flex-1 flex flex-col min-h-0">
         <div className="bg-muted px-4 py-2 border-b border-border flex-shrink-0 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-foreground">译文（中文）</h3>
-          
-          {/* 打字机模式切换 */}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setTranslationTypewriterMode('character')}
-              className={`px-2 py-1 text-xs rounded transition-colors ${
-                translationTypewriterMode === 'character'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-background text-muted-foreground hover:text-foreground'
-              }`}
-              title="逐字符显示（较慢，戏剧性强）"
-            >
-              逐字
-            </button>
-            <button
-              onClick={() => setTranslationTypewriterMode('word')}
-              className={`px-2 py-1 text-xs rounded transition-colors ${
-                translationTypewriterMode === 'word'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-background text-muted-foreground hover:text-foreground'
-              }`}
-              title="逐词显示（较快，流畅）"
-            >
-              逐词
-            </button>
-          </div>
+          <h3 className="text-sm font-semibold text-foreground">
+            译文 ({getLanguageLabel(targetLanguage)})
+          </h3>
         </div>
         <div
           ref={translationScrollRef}
           className="flex-1 overflow-y-auto overflow-x-hidden p-6 bg-green-50 dark:bg-green-950 min-h-0"
         >
-          {!accumulatedTranslation && !displayedTranslation && (
+          {!getFullTranslationText() && (
             <div className="text-center text-muted-foreground py-8">
               等待翻译...
             </div>
           )}
           
-          {/* 完整译文（已完成的 + 正在打字的） */}
-          {(accumulatedTranslation || displayedTranslation) && (
+          {getFullTranslationText() && (
             <p className="text-base whitespace-pre-wrap break-words leading-relaxed">
-              {getDisplayedTranslation()}
-              {isTypingTranslation && (
-                <span className="inline-block w-0.5 h-5 bg-foreground ml-0.5 animate-pulse" />
-              )}
+              {renderTextWithHighlights(getFullTranslationText(), translationHighlights)}
             </p>
           )}
         </div>
