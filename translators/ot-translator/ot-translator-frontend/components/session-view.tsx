@@ -6,6 +6,8 @@ import { ChatEntry } from '@/components/livekit/chat/chat-entry';
 import { ChatMessageView } from '@/components/livekit/chat/chat-message-view';
 import { MediaTiles } from '@/components/livekit/media-tiles';
 import { TranslationDisplay } from '@/components/translation-display';
+import { SplitViewDisplay } from '@/components/split-view-display';
+import { TranslationTabs, type DisplayMode } from '@/components/translation-tabs';
 import useChatAndTranscription from '@/hooks/useChatAndTranscription';
 import { useDebugMode } from '@/hooks/useDebug';
 import useTextStreamLogger from '@/hooks/useTextStreamLogger';
@@ -41,6 +43,7 @@ export const SessionView = ({
 }: React.ComponentProps<'div'> & SessionViewProps) => {
   const { state: agentState } = useVoiceAssistant();
   const [chatOpen, setChatOpen] = useState(false);
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('alternate');
   const { messages, send } = useChatAndTranscription();
   const room = useRoomContext();
 
@@ -123,10 +126,25 @@ export const SessionView = ({
         <div className="from-background absolute bottom-0 left-0 h-12 w-full translate-y-full bg-gradient-to-b to-transparent" />
       </div>
 
-      {/* Translation Display - Centered with padding for audio visualizer */}
+      {/* Translation Display - With Tab Navigation */}
       {sessionStarted && (
-        <div className="fixed left-1/2 -translate-x-1/2 top-32 bottom-28 w-full max-w-4xl px-4 py-4 hidden lg:block z-40 bg-background/80 backdrop-blur-sm border-x border-border">
-          <TranslationDisplay className="h-full" />
+        <div className="fixed left-1/2 -translate-x-1/2 top-32 bottom-28 w-full max-w-5xl hidden lg:flex z-40 bg-background/80 backdrop-blur-sm border border-border rounded-lg overflow-hidden shadow-lg">
+          {/* Left Tab Navigation */}
+          <TranslationTabs
+            currentMode={displayMode}
+            onModeChange={setDisplayMode}
+            className="w-40 flex-shrink-0"
+          />
+          
+          {/* Main Content Area */}
+          <div className="flex-1 overflow-hidden">
+            {displayMode === 'alternate' && (
+              <TranslationDisplay className="h-full" />
+            )}
+            {displayMode === 'split' && (
+              <SplitViewDisplay className="h-full" />
+            )}
+          </div>
         </div>
       )}
 
