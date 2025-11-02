@@ -1,21 +1,9 @@
 'use client';
 
-import { useMaybeRoomContext } from '@livekit/components-react';
-import { RpcInvocationData } from 'livekit-client';
-import { useEffect, useRef, useState } from 'react';
-
-export interface TranslationData {
-  type: 'interim' | 'final';
-  original: {
-    text: string;
-    language: string;
-  };
-  translation: {
-    text: string;
-    language: string;
-  } | null;
-  timestamp: number;
-}
+import { useAutoScroll } from '@/hooks/useAutoScroll';
+import { useTranslationRPC } from '@/hooks/useTranslationRPC';
+import { TranslationData } from '@/lib/types';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export interface TranslationSplitProps {
   className?: string;
@@ -24,50 +12,95 @@ export interface TranslationSplitProps {
   getLanguageLabel: (lang: string) => string;
 }
 
+type ChangeType = 'same' | 'added' | 'modified';
+
+interface TextChange {
+  type: ChangeType;
+  text: string;
+  startIndex: number;
+}
+
 export function TranslationSplit({ 
   className, 
   sourceLanguage, 
   targetLanguage, 
   getLanguageLabel 
 }: TranslationSplitProps) {
-  // 原文区域：累积的文本 + 当前显示的文本
+  // 原文区域状态
   const [accumulatedOriginal, setAccumulatedOriginal] = useState<string>('');
   const [currentOriginal, setCurrentOriginal] = useState<string>('');
-  const [prevOriginal, setPrevOriginal] = useState<string>(''); // 用于 Diff
-  const [originalHighlights, setOriginalHighlights] = useState<number[]>([]);
+  const [prevOriginal, setPrevOriginal] = useState<string>('');
   const [currentLanguage, setCurrentLanguage] = useState<string>('');
   
-  // 译文区域：累积的文本 + 当前显示的文本
+  // 译文区域状态
   const [accumulatedTranslation, setAccumulatedTranslation] = useState<string>('');
   const [currentTranslation, setCurrentTranslation] = useState<string>('');
-  const [prevTranslation, setPrevTranslation] = useState<string>(''); // 用于 Diff
-  const [translationHighlights, setTranslationHighlights] = useState<number[]>([]);
+  const [prevTranslation, setPrevTranslation] = useState<string>('');
 
   const currentOriginalRef = useRef(currentOriginal);
   const currentTranslationRef = useRef(currentTranslation);
   
-  const room = useMaybeRoomContext();
   const originalScrollRef = useRef<HTMLDivElement>(null);
   const translationScrollRef = useRef<HTMLDivElement>(null);
-  
-  // 文本变化类型
-  type ChangeType = 'same' | 'added' | 'deleted' | 'modified';
-  
-  interface TextChange {
-    type: ChangeType;
-    text: string;
-    startIndex: number;
-  }
 
+  // 同步 refs
   useEffect(() => {
     currentOriginalRef.current = currentOriginal;
-  }, [currentOriginal]);
-
-  useEffect(() => {
     currentTranslationRef.current = currentTranslation;
-  }, [currentTranslation]);
+  }, [currentOriginal, currentTranslation]);
 
-  // 计算文本的增量变化（优化版本）
+  // 处理翻译数据
+  const handleTranslation = useCallback((payload: TranslationData) => {
+    // 原文处理
+    if (payload.type === 'interim') {
+      const newOriginal = payload.original.text;
+      setPrevOriginal(currentOriginalRef.current);
+      setCurrentOriginal(newOriginal);
+      currentOriginalRef.current = newOriginal;
+      setCurrentLanguage(payload.original.language);
+    } else if (payload.type === 'final') {
+      const newOriginal = payload.original.text;
+      setPrevOriginal(currentOriginalRef.current);
+      setCurrentOriginal(newOriginal);
+      currentOriginalRef.current = newOriginal;
+
+      setAccumulatedOriginal((prev) => {
+        const separator = prev ? '\n\n' : '';
+        return prev + separator + newOriginal;
+      });
+
+      setCurrentLanguage(payload.original.language);
+    }
+
+    // 译文处理
+    if (payload.translation) {
+      const newTranslation = payload.translation.text;
+
+      if (payload.type === 'interim') {
+        setPrevTranslation(currentTranslationRef.current);
+        setCurrentTranslation(newTranslation);
+        currentTranslationRef.current = newTranslation;
+      } else if (payload.type === 'final') {
+        setPrevTranslation(currentTranslationRef.current);
+        setCurrentTranslation(newTranslation);
+        currentTranslationRef.current = newTranslation;
+
+        setAccumulatedTranslation((prev) => {
+          const separator = prev ? '\n\n' : '';
+          return prev + separator + newTranslation;
+        });
+      }
+    }
+  }, []);
+
+  // 使用 RPC hook
+  useTranslationRPC(handleTranslation);
+
+  // 自动滚动
+  useAutoScroll(originalScrollRef, [accumulatedOriginal, currentOriginal]);
+  useAutoScroll(translationScrollRef, [accumulatedTranslation, currentTranslation]);
+
+  // 计算文本的增量变化
   const computeTextChanges = (oldText: string, newText: string): TextChange[] => {
     const changes: TextChange[] = [];
     
@@ -101,25 +134,12 @@ export function TranslationSplit({
     const oldMiddle = oldText.slice(commonPrefixLength, oldText.length - commonSuffixLength);
     const newMiddle = newText.slice(commonPrefixLength, newText.length - commonSuffixLength);
     
-    if (oldMiddle || newMiddle) {
-      if (!oldMiddle && newMiddle) {
-        // 纯新增
-        changes.push({
-          type: 'added',
-          text: newMiddle,
-          startIndex: commonPrefixLength,
-        });
-      } else if (oldMiddle && !newMiddle) {
-        // 纯删除（不渲染，直接跳过）
-        // 在实际场景中，interim 一般只会追加，不会删除
-      } else {
-        // 修改（当作删除旧的 + 添加新的）
-        changes.push({
-          type: 'modified',
-          text: newMiddle,
-          startIndex: commonPrefixLength,
-        });
-      }
+    if (newMiddle) {
+      changes.push({
+        type: !oldMiddle ? 'added' : 'modified',
+        text: newMiddle,
+        startIndex: commonPrefixLength,
+      });
     }
     
     // 相同的后缀部分
@@ -134,128 +154,10 @@ export function TranslationSplit({
     return changes;
   };
 
-  // 计算文本差异的位置（用于高亮）
-  const findDifferentIndices = (oldText: string, newText: string): number[] => {
-    const indices: number[] = [];
-    const maxLen = Math.max(oldText.length, newText.length);
-    
-    for (let i = 0; i < maxLen; i++) {
-      if (oldText[i] !== newText[i]) {
-        indices.push(i);
-      }
-    }
-    
-    return indices;
-  };
-
-  // Register RPC handler for receiving translation updates
-  useEffect(() => {
-    if (!room || !room.localParticipant) return;
-
-    const handleReceiveTranslation = async (
-      rpcInvocation: RpcInvocationData
-    ): Promise<string> => {
-      try {
-        const payload = JSON.parse(rpcInvocation.payload) as TranslationData;
-
-        if (payload && payload.original) {
-          // 原文处理
-          if (payload.type === 'interim') {
-            const newOriginal = payload.original.text;
-            const prevOriginalValue = currentOriginalRef.current;
-
-            setPrevOriginal(prevOriginalValue);
-            setCurrentOriginal(newOriginal);
-            currentOriginalRef.current = newOriginal;
-            setCurrentLanguage(payload.original.language);
-          } else if (payload.type === 'final') {
-            const newOriginal = payload.original.text;
-            const prevOriginalValue = currentOriginalRef.current;
-
-            if (newOriginal !== prevOriginalValue) {
-              const diffIndices = findDifferentIndices(prevOriginalValue, newOriginal);
-              setOriginalHighlights(diffIndices);
-              setTimeout(() => setOriginalHighlights([]), 300);
-            }
-
-            setPrevOriginal(prevOriginalValue);
-            setCurrentOriginal(newOriginal);
-            currentOriginalRef.current = newOriginal;
-
-            setAccumulatedOriginal((prev) => {
-              const separator = prev ? '\n\n' : '';
-              return prev + separator + newOriginal;
-            });
-
-            setCurrentLanguage(payload.original.language);
-          }
-
-          // 译文处理
-          if (payload.translation) {
-            const newTranslation = payload.translation.text;
-            const prevTranslationValue = currentTranslationRef.current;
-
-            if (payload.type === 'interim') {
-              setPrevTranslation(prevTranslationValue);
-              setCurrentTranslation(newTranslation);
-              currentTranslationRef.current = newTranslation;
-            } else if (payload.type === 'final') {
-              if (newTranslation !== prevTranslationValue) {
-                const diffIndices = findDifferentIndices(prevTranslationValue, newTranslation);
-                setTranslationHighlights(diffIndices);
-                setTimeout(() => setTranslationHighlights([]), 300);
-              }
-
-              setPrevTranslation(prevTranslationValue);
-              setCurrentTranslation(newTranslation);
-              currentTranslationRef.current = newTranslation;
-
-              setAccumulatedTranslation((prev) => {
-                const separator = prev ? '\n\n' : '';
-                return prev + separator + newTranslation;
-              });
-            }
-          }
-
-          return 'Success: Translation received';
-        } else {
-          return 'Error: Invalid translation data format';
-        }
-      } catch (error) {
-        console.error('Error processing translation RPC:', error);
-        return 'Error: ' + (error instanceof Error ? error.message : String(error));
-      }
-    };
-
-    // Register RPC method
-    room.localParticipant.registerRpcMethod('receive_translation', handleReceiveTranslation);
-
-    return () => {
-      if (room && room.localParticipant) {
-        room.localParticipant.unregisterRpcMethod('receive_translation');
-      }
-    };
-  }, [room]);
-
-  // 自动滚动到底部 - 原文区域
-  useEffect(() => {
-    if (originalScrollRef.current) {
-      originalScrollRef.current.scrollTop = originalScrollRef.current.scrollHeight;
-    }
-  }, [accumulatedOriginal, currentOriginal]);
-
-  // 自动滚动到底部 - 译文区域
-  useEffect(() => {
-    if (translationScrollRef.current) {
-      translationScrollRef.current.scrollTop = translationScrollRef.current.scrollHeight;
-    }
-  }, [accumulatedTranslation, currentTranslation]);
-
   // 渲染带增量动画的文本
   const renderTextWithAnimation = (currentText: string, prevText: string) => {
     if (!currentText) return null;
     if (!prevText) {
-      // 首次显示，全部淡入
       return (
         <span className="animate-fade-in">
           {currentText}
@@ -271,79 +173,35 @@ export function TranslationSplit({
           const key = `${change.startIndex}-${index}`;
           
           if (change.type === 'same') {
-            // 不变的部分，无动画
             return <span key={key}>{change.text}</span>;
-          } else if (change.type === 'added') {
-            // 新增的部分，淡入动画
-            return (
-              <span key={key} className="animate-fade-in">
-                {change.text}
-              </span>
-            );
-          } else if (change.type === 'modified') {
-            // 修改的部分，同样用淡入动画
+          } else {
             return (
               <span key={key} className="animate-fade-in">
                 {change.text}
               </span>
             );
           }
-          return null;
         })}
       </>
     );
   };
 
-  // 渲染带高亮的文本（用于 final 纠错）
-  const renderTextWithHighlights = (text: string, highlights: number[]) => {
-    if (highlights.length === 0) {
-      return text;
-    }
-    
-    return (
-      <>
-        {text.split('').map((char, index) => (
-          <span
-            key={index}
-            className={`${
-              highlights.includes(index)
-                ? 'bg-yellow-200 dark:bg-yellow-700 transition-colors duration-300'
-                : ''
-            }`}
-          >
-            {char}
-          </span>
-        ))}
-      </>
-    );
-  };
-
   // 获取完整显示文本（累积的历史 + 当前句子）
-  const getFullOriginalText = () => {
-    if (!accumulatedOriginal && !currentOriginal) return '';
-    if (!accumulatedOriginal) return currentOriginal;
+  const getFullText = (accumulated: string, current: string): string => {
+    if (!accumulated && !current) return '';
+    if (!accumulated) return current;
     
-    const sentences = accumulatedOriginal.split('\n\n');
+    const sentences = accumulated.split('\n\n');
     const completedSentences = sentences.slice(0, -1).join('\n\n');
     
     if (completedSentences) {
-      return completedSentences + '\n\n' + currentOriginal;
+      return completedSentences + '\n\n' + current;
     }
-    return currentOriginal;
+    return current;
   };
 
-  const getFullTranslationText = () => {
-    if (!accumulatedTranslation && !currentTranslation) return '';
-    if (!accumulatedTranslation) return currentTranslation;
-    
-    const sentences = accumulatedTranslation.split('\n\n');
-    const completedSentences = sentences.slice(0, -1).join('\n\n');
-    
-    if (completedSentences) {
-      return completedSentences + '\n\n' + currentTranslation;
-    }
-    return currentTranslation;
-  };
+  const fullOriginalText = getFullText(accumulatedOriginal, currentOriginal);
+  const fullTranslationText = getFullText(accumulatedTranslation, currentTranslation);
 
   return (
     <div className={`flex flex-col h-full ${className || ''}`}>
@@ -361,15 +219,18 @@ export function TranslationSplit({
           ref={originalScrollRef}
           className="flex-1 overflow-y-auto overflow-x-hidden p-6 bg-gray-50 dark:bg-gray-900 min-h-0"
         >
-          {!getFullOriginalText() && (
+          {!fullOriginalText && (
             <div className="text-center text-muted-foreground py-8">
               等待输入...
             </div>
           )}
           
-          {getFullOriginalText() && (
+          {fullOriginalText && (
             <p className="text-base font-mono whitespace-pre-wrap break-words leading-relaxed">
-              {renderTextWithAnimation(getFullOriginalText(), getFullOriginalText().slice(0, -currentOriginal.length) + prevOriginal)}
+              {renderTextWithAnimation(
+                fullOriginalText, 
+                fullOriginalText.slice(0, -currentOriginal.length) + prevOriginal
+              )}
             </p>
           )}
         </div>
@@ -386,15 +247,18 @@ export function TranslationSplit({
           ref={translationScrollRef}
           className="flex-1 overflow-y-auto overflow-x-hidden p-6 bg-green-50 dark:bg-green-950 min-h-0"
         >
-          {!getFullTranslationText() && (
+          {!fullTranslationText && (
             <div className="text-center text-muted-foreground py-8">
               等待翻译...
             </div>
           )}
           
-          {getFullTranslationText() && (
+          {fullTranslationText && (
             <p className="text-base whitespace-pre-wrap break-words leading-relaxed">
-              {renderTextWithAnimation(getFullTranslationText(), getFullTranslationText().slice(0, -currentTranslation.length) + prevTranslation)}
+              {renderTextWithAnimation(
+                fullTranslationText, 
+                fullTranslationText.slice(0, -currentTranslation.length) + prevTranslation
+              )}
             </p>
           )}
         </div>
@@ -402,4 +266,3 @@ export function TranslationSplit({
     </div>
   );
 }
-

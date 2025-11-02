@@ -30,3 +30,16 @@ export interface SandboxConfig {
     | { type: 'boolean'; value: boolean }
     | null;
 }
+
+export interface TranslationData {
+  type: 'interim' | 'final';
+  original: {
+    text: string;
+    language: string;
+  };
+  translation: {
+    text: string;
+    language: string;
+  } | null;
+  timestamp: number;
+}
