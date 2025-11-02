@@ -39,13 +39,18 @@ export function SplitViewDisplay({ className }: SplitViewDisplayProps) {
   // 原文区域：累积的文本 + 当前显示的文本
   const [accumulatedOriginal, setAccumulatedOriginal] = useState<string>('');
   const [currentOriginal, setCurrentOriginal] = useState<string>('');
+  const [prevOriginal, setPrevOriginal] = useState<string>(''); // 用于 Diff
   const [originalHighlights, setOriginalHighlights] = useState<number[]>([]);
   const [currentLanguage, setCurrentLanguage] = useState<string>('');
   
   // 译文区域：累积的文本 + 当前显示的文本
   const [accumulatedTranslation, setAccumulatedTranslation] = useState<string>('');
   const [currentTranslation, setCurrentTranslation] = useState<string>('');
+  const [prevTranslation, setPrevTranslation] = useState<string>(''); // 用于 Diff
   const [translationHighlights, setTranslationHighlights] = useState<number[]>([]);
+
+  const currentOriginalRef = useRef(currentOriginal);
+  const currentTranslationRef = useRef(currentTranslation);
   
   const room = useMaybeRoomContext();
   const originalScrollRef = useRef<HTMLDivElement>(null);
@@ -71,8 +76,101 @@ export function SplitViewDisplay({ className }: SplitViewDisplayProps) {
     }
     return 500;
   });
+  const [debounceEnabled, setDebounceEnabled] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('translation_debounce_enabled');
+      if (saved !== null) {
+        return saved === 'true';
+      }
+    }
+    return true;
+  });
   const [showConfig, setShowConfig] = useState<boolean>(false);
   
+  // 文本变化类型
+  type ChangeType = 'same' | 'added' | 'deleted' | 'modified';
+  
+  interface TextChange {
+    type: ChangeType;
+    text: string;
+    startIndex: number;
+  }
+
+  useEffect(() => {
+    currentOriginalRef.current = currentOriginal;
+  }, [currentOriginal]);
+
+  useEffect(() => {
+    currentTranslationRef.current = currentTranslation;
+  }, [currentTranslation]);
+
+  // 计算文本的增量变化（优化版本）
+  const computeTextChanges = (oldText: string, newText: string): TextChange[] => {
+    const changes: TextChange[] = [];
+    
+    // 找到相同的前缀
+    let commonPrefixLength = 0;
+    const minLength = Math.min(oldText.length, newText.length);
+    while (commonPrefixLength < minLength && oldText[commonPrefixLength] === newText[commonPrefixLength]) {
+      commonPrefixLength++;
+    }
+    
+    // 找到相同的后缀
+    let commonSuffixLength = 0;
+    const maxSuffixLength = minLength - commonPrefixLength;
+    while (
+      commonSuffixLength < maxSuffixLength &&
+      oldText[oldText.length - 1 - commonSuffixLength] === newText[newText.length - 1 - commonSuffixLength]
+    ) {
+      commonSuffixLength++;
+    }
+    
+    // 相同的前缀部分
+    if (commonPrefixLength > 0) {
+      changes.push({
+        type: 'same',
+        text: newText.slice(0, commonPrefixLength),
+        startIndex: 0,
+      });
+    }
+    
+    // 中间变化的部分
+    const oldMiddle = oldText.slice(commonPrefixLength, oldText.length - commonSuffixLength);
+    const newMiddle = newText.slice(commonPrefixLength, newText.length - commonSuffixLength);
+    
+    if (oldMiddle || newMiddle) {
+      if (!oldMiddle && newMiddle) {
+        // 纯新增
+        changes.push({
+          type: 'added',
+          text: newMiddle,
+          startIndex: commonPrefixLength,
+        });
+      } else if (oldMiddle && !newMiddle) {
+        // 纯删除（不渲染，直接跳过）
+        // 在实际场景中，interim 一般只会追加，不会删除
+      } else {
+        // 修改（当作删除旧的 + 添加新的）
+        changes.push({
+          type: 'modified',
+          text: newMiddle,
+          startIndex: commonPrefixLength,
+        });
+      }
+    }
+    
+    // 相同的后缀部分
+    if (commonSuffixLength > 0) {
+      changes.push({
+        type: 'same',
+        text: newText.slice(newText.length - commonSuffixLength),
+        startIndex: newText.length - commonSuffixLength,
+      });
+    }
+    
+    return changes;
+  };
+
   // 计算文本差异的位置（用于高亮）
   const findDifferentIndices = (oldText: string, newText: string): number[] => {
     const indices: number[] = [];
@@ -100,56 +198,55 @@ export function SplitViewDisplay({ className }: SplitViewDisplayProps) {
         if (payload && payload.original) {
           // 原文处理
           if (payload.type === 'interim') {
-            // interim：直接更新当前文本，实时显示
-            setCurrentOriginal(payload.original.text);
+            const newOriginal = payload.original.text;
+            const prevOriginalValue = currentOriginalRef.current;
+
+            setPrevOriginal(prevOriginalValue);
+            setCurrentOriginal(newOriginal);
+            currentOriginalRef.current = newOriginal;
             setCurrentLanguage(payload.original.language);
           } else if (payload.type === 'final') {
-            // final：检查差异，高亮后确认
             const newOriginal = payload.original.text;
-            
-            if (newOriginal !== currentOriginal) {
-              // 有差异：高亮不同部分
-              const diffIndices = findDifferentIndices(currentOriginal, newOriginal);
+            const prevOriginalValue = currentOriginalRef.current;
+
+            if (newOriginal !== prevOriginalValue) {
+              const diffIndices = findDifferentIndices(prevOriginalValue, newOriginal);
               setOriginalHighlights(diffIndices);
-              
-              // 300ms 后清除高亮
               setTimeout(() => setOriginalHighlights([]), 300);
             }
-            
-            // 更新文本
+
+            setPrevOriginal(prevOriginalValue);
             setCurrentOriginal(newOriginal);
-            
-            // 追加到历史记录
+            currentOriginalRef.current = newOriginal;
+
             setAccumulatedOriginal((prev) => {
               const separator = prev ? '\n\n' : '';
               return prev + separator + newOriginal;
             });
-            
+
             setCurrentLanguage(payload.original.language);
           }
 
           // 译文处理
           if (payload.translation) {
+            const newTranslation = payload.translation.text;
+            const prevTranslationValue = currentTranslationRef.current;
+
             if (payload.type === 'interim') {
-              // interim 翻译：直接更新当前译文，实时显示
-              setCurrentTranslation(payload.translation.text);
+              setPrevTranslation(prevTranslationValue);
+              setCurrentTranslation(newTranslation);
+              currentTranslationRef.current = newTranslation;
             } else if (payload.type === 'final') {
-              // final 翻译：检查差异，高亮后确认
-              const newTranslation = payload.translation.text;
-              
-              if (newTranslation !== currentTranslation) {
-                // 有差异：高亮不同部分
-                const diffIndices = findDifferentIndices(currentTranslation, newTranslation);
+              if (newTranslation !== prevTranslationValue) {
+                const diffIndices = findDifferentIndices(prevTranslationValue, newTranslation);
                 setTranslationHighlights(diffIndices);
-                
-                // 300ms 后清除高亮
                 setTimeout(() => setTranslationHighlights([]), 300);
               }
-              
-              // 更新文本
+
+              setPrevTranslation(prevTranslationValue);
               setCurrentTranslation(newTranslation);
-              
-              // 追加到历史记录
+              currentTranslationRef.current = newTranslation;
+
               setAccumulatedTranslation((prev) => {
                 const separator = prev ? '\n\n' : '';
                 return prev + separator + newTranslation;
@@ -215,12 +312,14 @@ export function SplitViewDisplay({ className }: SplitViewDisplayProps) {
       localStorage.setItem('translation_source_language', sourceLanguage);
       localStorage.setItem('translation_target_language', targetLanguage);
       localStorage.setItem('translation_debounce_ms', debounceMs.toString());
+      localStorage.setItem('translation_debounce_enabled', debounceEnabled ? 'true' : 'false');
 
       // 发送配置到后端
       const payload = {
         source: sourceLanguage,
         target: targetLanguage,
         debounce: debounceMs,
+        debounce_enabled: debounceEnabled,
       };
 
       const result = await room.localParticipant.performRpc({
@@ -247,7 +346,50 @@ export function SplitViewDisplay({ className }: SplitViewDisplayProps) {
     }
   }, [room?.remoteParticipants.size]);
 
-  // 渲染带高亮的文本
+  // 渲染带增量动画的文本
+  const renderTextWithAnimation = (currentText: string, prevText: string) => {
+    if (!currentText) return null;
+    if (!prevText) {
+      // 首次显示，全部淡入
+      return (
+        <span className="animate-fade-in">
+          {currentText}
+        </span>
+      );
+    }
+    
+    const changes = computeTextChanges(prevText, currentText);
+    
+    return (
+      <>
+        {changes.map((change, index) => {
+          const key = `${change.startIndex}-${index}`;
+          
+          if (change.type === 'same') {
+            // 不变的部分，无动画
+            return <span key={key}>{change.text}</span>;
+          } else if (change.type === 'added') {
+            // 新增的部分，淡入动画
+            return (
+              <span key={key} className="animate-fade-in">
+                {change.text}
+              </span>
+            );
+          } else if (change.type === 'modified') {
+            // 修改的部分，同样用淡入动画
+            return (
+              <span key={key} className="animate-fade-in">
+                {change.text}
+              </span>
+            );
+          }
+          return null;
+        })}
+      </>
+    );
+  };
+
+  // 渲染带高亮的文本（用于 final 纠错）
   const renderTextWithHighlights = (text: string, highlights: number[]) => {
     if (highlights.length === 0) {
       return text;
@@ -314,7 +456,7 @@ export function SplitViewDisplay({ className }: SplitViewDisplayProps) {
               </button>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               {/* 源语言选择 */}
               <div>
                 <label className="block text-xs text-muted-foreground mb-1">源语言</label>
@@ -365,6 +507,22 @@ export function SplitViewDisplay({ className }: SplitViewDisplayProps) {
                   <span>更快</span>
                   <span>更稳</span>
                 </div>
+              </div>
+
+              <div className="flex flex-col justify-between">
+                <label className="block text-xs text-muted-foreground mb-1">译文防抖</label>
+                <label className="inline-flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={debounceEnabled}
+                    onChange={(e) => setDebounceEnabled(e.target.checked)}
+                    className="h-4 w-4 accent-primary"
+                  />
+                  <span>{debounceEnabled ? '开启' : '关闭'}</span>
+                </label>
+                <span className="text-xs text-muted-foreground mt-1">
+                  关闭后译文将在每次识别更新时立即出现
+                </span>
               </div>
             </div>
             
@@ -419,7 +577,7 @@ export function SplitViewDisplay({ className }: SplitViewDisplayProps) {
           
           {getFullOriginalText() && (
             <p className="text-base font-mono whitespace-pre-wrap break-words leading-relaxed">
-              {renderTextWithHighlights(getFullOriginalText(), originalHighlights)}
+              {renderTextWithAnimation(getFullOriginalText(), getFullOriginalText().slice(0, -currentOriginal.length) + prevOriginal)}
             </p>
           )}
         </div>
@@ -444,7 +602,7 @@ export function SplitViewDisplay({ className }: SplitViewDisplayProps) {
           
           {getFullTranslationText() && (
             <p className="text-base whitespace-pre-wrap break-words leading-relaxed">
-              {renderTextWithHighlights(getFullTranslationText(), translationHighlights)}
+              {renderTextWithAnimation(getFullTranslationText(), getFullTranslationText().slice(0, -currentTranslation.length) + prevTranslation)}
             </p>
           )}
         </div>

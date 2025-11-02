@@ -25,6 +25,16 @@ python3 -c "from google.cloud import translate_v2; client = translate_v2.Client(
 echo $DEEPGRAM_API_KEY
 ```
 
+### 4. （可选）配置译文防抖开关
+
+要禁用译文防抖，可在启动前设置环境变量：
+
+```bash
+export TRANSLATION_DEBOUNCE_ENABLED=false
+```
+
+默认值为 `true`，表示启用防抖机制。关闭后，译文将在每次识别更新时立即返回，有助于调试实时回显问题。
+
 ## 测试步骤
 
 ### 步骤 1：启动后端 Agent
@@ -37,7 +47,7 @@ python translators/ot-translator/deepgram_translator_agent.py dev
 **预期输出**：
 ```
 INFO:deepgram-translator:Google Cloud Translate client initialized successfully
-INFO:deepgram-translator:DeepgramTranslationAgent initialized: en -> zh, debounce=500ms
+INFO:deepgram-translator:DeepgramTranslationAgent initialized: en -> zh, debounce_ms=500.0, debounce_enabled=True
 ```
 
 **常见错误**：

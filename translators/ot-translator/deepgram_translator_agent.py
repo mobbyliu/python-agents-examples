@@ -40,10 +40,11 @@ logger.setLevel(logging.INFO)
 class DebouncedTranslator:
     """处理带防抖的翻译请求"""
     
-    def __init__(self, debounce_ms: float = 500):
+    def __init__(self, debounce_ms: float = 500, enabled: bool = True):
         self.debounce_delay = debounce_ms / 1000
         self.pending_task: Optional[asyncio.Task] = None
         self.translate_client = None
+        self.enabled = enabled
         
         # 初始化 Google Cloud Translate 客户端
         try:
@@ -58,6 +59,21 @@ class DebouncedTranslator:
         self.debounce_delay = debounce_ms / 1000
         logger.info(f"Debounce delay updated to {debounce_ms}ms")
     
+    def update_enabled(self, enabled: bool):
+        """启用或禁用防抖翻译"""
+        if self.enabled == enabled:
+            return
+
+        self.enabled = enabled
+
+        # 如果关闭防抖，取消任何待处理的任务
+        if not enabled and self.pending_task and not self.pending_task.done():
+            self.pending_task.cancel()
+            self.pending_task = None
+
+        status = "enabled" if enabled else "disabled"
+        logger.info(f"Debounced translation {status}")
+
     async def translate_text(
         self, 
         text: str, 
@@ -97,10 +113,22 @@ class DebouncedTranslator:
         callback
     ):
         """带防抖的翻译：取消之前的请求，延迟执行新请求"""
+        # 禁用防抖时，直接执行翻译
+        if not self.enabled:
+            if self.pending_task and not self.pending_task.done():
+                self.pending_task.cancel()
+                self.pending_task = None
+
+            translated = await self.translate_text(text, source_language, target_language)
+
+            if translated:
+                await callback(text, source_language, translated, is_final=False)
+            return
+
         # 取消之前的待处理任务
         if self.pending_task and not self.pending_task.done():
             self.pending_task.cancel()
-        
+
         async def delayed_translate():
             try:
                 # 等待防抖延迟
@@ -128,7 +156,8 @@ class DeepgramTranslationAgent(Agent):
         ctx: Optional[JobContext] = None,
         source_language: str = "en",
         target_language: str = "zh",
-        debounce_ms: float = 500
+        debounce_ms: float = 500,
+        debounce_enabled: bool = True
     ):
         # 配置 Deepgram STT
         # 注意：Deepgram 支持的语言代码可能与 Google Translate 不同
@@ -140,21 +169,32 @@ class DeepgramTranslationAgent(Agent):
                 interim_results=True,  # 启用 interim results
             ),
             allow_interruptions=False,
-            vad=silero.VAD.load()
+            vad=silero.VAD.load(
+                min_speech_duration=0.3,  # 增加最小语音持续时间，减少 VAD 触发频率
+                min_silence_duration=0.5,  # 增加最小静音持续时间，优化性能
+            )
         )
         
         self.ctx = ctx
         self.source_language = source_language
         self.target_language = target_language
-        self.translator = DebouncedTranslator(debounce_ms=debounce_ms)
+        self.debounce_enabled = debounce_enabled
+        self.translator = DebouncedTranslator(debounce_ms=debounce_ms, enabled=debounce_enabled)
         
-        logger.info(f"DeepgramTranslationAgent initialized: {source_language} -> {target_language}, debounce={debounce_ms}ms")
+        logger.info(
+            "DeepgramTranslationAgent initialized: %s -> %s, debounce_ms=%s, debounce_enabled=%s",
+            source_language,
+            target_language,
+            debounce_ms,
+            debounce_enabled,
+        )
     
     async def update_config(
         self, 
         source_language: Optional[str] = None, 
         target_language: Optional[str] = None,
-        debounce_ms: Optional[float] = None
+        debounce_ms: Optional[float] = None,
+        debounce_enabled: Optional[bool] = None
     ):
         """更新翻译配置"""
         if source_language:
@@ -167,6 +207,12 @@ class DeepgramTranslationAgent(Agent):
         
         if debounce_ms is not None:
             self.translator.update_debounce_delay(debounce_ms)
+
+        if debounce_enabled is not None:
+            if isinstance(debounce_enabled, str):
+                debounce_enabled = debounce_enabled.strip().lower() in {"1", "true", "yes", "on"}
+            self.debounce_enabled = debounce_enabled
+            self.translator.update_enabled(debounce_enabled)
     
     async def send_translation_to_frontend(
         self, 
@@ -322,22 +368,26 @@ class DeepgramTranslationAgent(Agent):
 
 
 async def entrypoint(ctx: JobContext):
-    await ctx.connect()
-    
     # 默认配置：英语到中文，500ms 防抖
     source_language = os.getenv("TRANSLATION_SOURCE_LANGUAGE", "en")
     target_language = os.getenv("TRANSLATION_TARGET_LANGUAGE", "zh")
     debounce_ms = float(os.getenv("TRANSLATION_DEBOUNCE_MS", "500"))
+    debounce_enabled_env = os.getenv("TRANSLATION_DEBOUNCE_ENABLED", "true")
+    debounce_enabled = debounce_enabled_env.strip().lower() in {"1", "true", "yes", "on"}
     
     # 创建带上下文的 agent
     agent = DeepgramTranslationAgent(
         ctx=ctx,
         source_language=source_language,
         target_language=target_language,
-        debounce_ms=debounce_ms
+        debounce_ms=debounce_ms,
+        debounce_enabled=debounce_enabled
     )
     
     session = AgentSession()
+    
+    # 先连接房间
+    await ctx.connect()
     
     # 注册 RPC 方法：接收前端的配置更新
     async def handle_update_config(data: rtc.RpcInvocationData) -> str:
@@ -346,7 +396,8 @@ async def entrypoint(ctx: JobContext):
             await agent.update_config(
                 source_language=config.get('source'),
                 target_language=config.get('target'),
-                debounce_ms=config.get('debounce')
+                debounce_ms=config.get('debounce'),
+                debounce_enabled=config.get('debounce_enabled')
             )
             return json.dumps({"status": "success", "message": "Configuration updated"})
         except Exception as e:
@@ -358,6 +409,7 @@ async def entrypoint(ctx: JobContext):
         handle_update_config
     )
     
+    # 在连接后启动 session（处理音频）
     await session.start(
         agent=agent,
         room=ctx.room

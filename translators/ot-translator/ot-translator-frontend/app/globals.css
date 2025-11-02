@@ -244,4 +244,18 @@
       background-position: 250% 0;
     }
   }
+
+  /* 淡入动画 - 用于新增和修改的文本 */
+  .animate-fade-in {
+    animation: fadeIn 200ms ease-in;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
 }
