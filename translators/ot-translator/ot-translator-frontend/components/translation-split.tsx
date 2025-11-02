@@ -17,25 +17,19 @@ export interface TranslationData {
   timestamp: number;
 }
 
-export interface SplitViewDisplayProps {
+export interface TranslationSplitProps {
   className?: string;
+  sourceLanguage: string;
+  targetLanguage: string;
+  getLanguageLabel: (lang: string) => string;
 }
 
-// 支持的语言列表
-const SUPPORTED_LANGUAGES = [
-  { code: 'en', name: '英语 (English)' },
-  { code: 'zh', name: '中文 (Chinese)' },
-  { code: 'fr', name: '法语 (French)' },
-  { code: 'es', name: '西班牙语 (Spanish)' },
-  { code: 'de', name: '德语 (German)' },
-  { code: 'ja', name: '日语 (Japanese)' },
-  { code: 'ko', name: '韩语 (Korean)' },
-  { code: 'pt', name: '葡萄牙语 (Portuguese)' },
-  { code: 'ru', name: '俄语 (Russian)' },
-  { code: 'ar', name: '阿拉伯语 (Arabic)' },
-];
-
-export function SplitViewDisplay({ className }: SplitViewDisplayProps) {
+export function TranslationSplit({ 
+  className, 
+  sourceLanguage, 
+  targetLanguage, 
+  getLanguageLabel 
+}: TranslationSplitProps) {
   // 原文区域：累积的文本 + 当前显示的文本
   const [accumulatedOriginal, setAccumulatedOriginal] = useState<string>('');
   const [currentOriginal, setCurrentOriginal] = useState<string>('');
@@ -55,37 +49,6 @@ export function SplitViewDisplay({ className }: SplitViewDisplayProps) {
   const room = useMaybeRoomContext();
   const originalScrollRef = useRef<HTMLDivElement>(null);
   const translationScrollRef = useRef<HTMLDivElement>(null);
-  
-  // 语言配置
-  const [sourceLanguage, setSourceLanguage] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('translation_source_language') || 'en';
-    }
-    return 'en';
-  });
-  const [targetLanguage, setTargetLanguage] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('translation_target_language') || 'zh';
-    }
-    return 'zh';
-  });
-  const [debounceMs, setDebounceMs] = useState<number>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('translation_debounce_ms');
-      return saved ? parseInt(saved) : 500;
-    }
-    return 500;
-  });
-  const [debounceEnabled, setDebounceEnabled] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('translation_debounce_enabled');
-      if (saved !== null) {
-        return saved === 'true';
-      }
-    }
-    return true;
-  });
-  const [showConfig, setShowConfig] = useState<boolean>(false);
   
   // 文本变化类型
   type ChangeType = 'same' | 'added' | 'deleted' | 'modified';
@@ -288,64 +251,6 @@ export function SplitViewDisplay({ className }: SplitViewDisplayProps) {
     }
   }, [accumulatedTranslation, currentTranslation]);
 
-  const getLanguageLabel = (lang: string): string => {
-    const langObj = SUPPORTED_LANGUAGES.find(l => l.code === lang);
-    if (langObj) return langObj.name.split(' ')[0]; // 返回中文名称
-    
-    const labels: Record<string, string> = {
-      fr: '法语',
-      en: '英语',
-      zh: '中文',
-    };
-    return labels[lang] || lang.toUpperCase();
-  };
-
-  // 更新配置并发送到后端
-  const updateTranslationConfig = async () => {
-    if (!room || !room.localParticipant) {
-      console.warn('Room not connected, cannot update config');
-      return;
-    }
-
-    try {
-      // 保存到 localStorage
-      localStorage.setItem('translation_source_language', sourceLanguage);
-      localStorage.setItem('translation_target_language', targetLanguage);
-      localStorage.setItem('translation_debounce_ms', debounceMs.toString());
-      localStorage.setItem('translation_debounce_enabled', debounceEnabled ? 'true' : 'false');
-
-      // 发送配置到后端
-      const payload = {
-        source: sourceLanguage,
-        target: targetLanguage,
-        debounce: debounceMs,
-        debounce_enabled: debounceEnabled,
-      };
-
-      const result = await room.localParticipant.performRpc({
-        destinationIdentity: '', // 发送到 agent
-        method: 'update_translation_config',
-        payload: JSON.stringify(payload),
-      });
-
-      console.log('Config updated successfully:', result);
-      setShowConfig(false);
-    } catch (error) {
-      console.error('Failed to update config:', error);
-    }
-  };
-
-  // 初始化时发送配置到后端
-  useEffect(() => {
-    if (room && room.localParticipant && room.remoteParticipants.size > 0) {
-      // 延迟一下确保 agent 已经准备好
-      const timer = setTimeout(() => {
-        updateTranslationConfig();
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [room?.remoteParticipants.size]);
-
   // 渲染带增量动画的文本
   const renderTextWithAnimation = (currentText: string, prevText: string) => {
     if (!currentText) return null;
@@ -442,128 +347,15 @@ export function SplitViewDisplay({ className }: SplitViewDisplayProps) {
 
   return (
     <div className={`flex flex-col h-full ${className || ''}`}>
-      {/* 配置面板 */}
-      {showConfig && (
-        <div className="bg-muted border-b border-border p-4">
-          <div className="max-w-4xl mx-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold">翻译配置</h3>
-              <button
-                onClick={() => setShowConfig(false)}
-                className="text-muted-foreground hover:text-foreground text-sm"
-              >
-                ✕
-              </button>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              {/* 源语言选择 */}
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">源语言</label>
-                <select
-                  value={sourceLanguage}
-                  onChange={(e) => setSourceLanguage(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-border rounded bg-background"
-                >
-                  {SUPPORTED_LANGUAGES.map((lang) => (
-                    <option key={lang.code} value={lang.code}>
-                      {lang.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              
-              {/* 目标语言选择 */}
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">目标语言</label>
-                <select
-                  value={targetLanguage}
-                  onChange={(e) => setTargetLanguage(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-border rounded bg-background"
-                >
-                  {SUPPORTED_LANGUAGES.map((lang) => (
-                    <option key={lang.code} value={lang.code}>
-                      {lang.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              
-              {/* 防抖延迟 */}
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">
-                  防抖延迟: {debounceMs}ms
-                </label>
-                <input
-                  type="range"
-                  min="100"
-                  max="1000"
-                  step="50"
-                  value={debounceMs}
-                  onChange={(e) => setDebounceMs(parseInt(e.target.value))}
-                  className="w-full"
-                />
-                <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                  <span>更快</span>
-                  <span>更稳</span>
-                </div>
-              </div>
-
-              <div className="flex flex-col justify-between">
-                <label className="block text-xs text-muted-foreground mb-1">译文防抖</label>
-                <label className="inline-flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={debounceEnabled}
-                    onChange={(e) => setDebounceEnabled(e.target.checked)}
-                    className="h-4 w-4 accent-primary"
-                  />
-                  <span>{debounceEnabled ? '开启' : '关闭'}</span>
-                </label>
-                <span className="text-xs text-muted-foreground mt-1">
-                  关闭后译文将在每次识别更新时立即出现
-                </span>
-              </div>
-            </div>
-            
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                onClick={() => setShowConfig(false)}
-                className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
-              >
-                取消
-              </button>
-              <button
-                onClick={updateTranslationConfig}
-                className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded hover:opacity-90"
-              >
-                保存配置
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      
       {/* 上半部分：原文区域 */}
       <div className="flex-1 flex flex-col border-b-2 border-border min-h-0">
-        <div className="bg-muted px-4 py-2 border-b border-border flex-shrink-0 flex items-center justify-between">
+        <div className="bg-muted px-4 py-2 border-b border-border flex-shrink-0">
           <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
             原文
             {currentLanguage && (
               <span className="text-xs text-muted-foreground">({getLanguageLabel(currentLanguage)})</span>
             )}
           </h3>
-          
-          <div className="flex items-center gap-3">
-            {/* 配置按钮 */}
-            <button
-              onClick={() => setShowConfig(!showConfig)}
-              className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-background rounded transition-colors"
-              title="翻译配置"
-            >
-              ⚙️ 配置
-            </button>
-          </div>
         </div>
         <div
           ref={originalScrollRef}
