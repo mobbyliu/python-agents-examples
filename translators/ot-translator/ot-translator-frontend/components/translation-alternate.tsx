@@ -3,7 +3,7 @@
 import { useAutoScroll } from '@/hooks/useAutoScroll';
 import { useTranslationRPC } from '@/hooks/useTranslationRPC';
 import { TranslationData } from '@/lib/types';
-import { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 
 export interface TranslationAlternateProps {
   className?: string;
@@ -14,11 +14,11 @@ export interface TranslationAlternateProps {
 
 interface ConversationItem {
   original: {
-    text: string;
+    full_text: string;
     language: string;
   };
   translation: {
-    text: string;
+    full_text: string;
     language: string;
   } | null;
   timestamp: number;
@@ -28,14 +28,110 @@ interface ConversationBubbleProps {
   text: string;
   type: 'original' | 'translation' | 'target-native';
   isInterim?: boolean;
+  prevText?: string;
 }
 
-// 对话气泡组件
-function ConversationBubble({ 
+type ChangeType = 'same' | 'added' | 'modified';
+
+interface TextChange {
+  type: ChangeType;
+  text: string;
+  startIndex: number;
+}
+
+// 计算文本的增量变化
+const computeTextChanges = (oldText: string, newText: string): TextChange[] => {
+  const changes: TextChange[] = [];
+  
+  // 找到相同的前缀
+  let commonPrefixLength = 0;
+  const minLength = Math.min(oldText.length, newText.length);
+  while (commonPrefixLength < minLength && oldText[commonPrefixLength] === newText[commonPrefixLength]) {
+    commonPrefixLength++;
+  }
+  
+  // 找到相同的后缀
+  let commonSuffixLength = 0;
+  const maxSuffixLength = minLength - commonPrefixLength;
+  while (
+    commonSuffixLength < maxSuffixLength &&
+    oldText[oldText.length - 1 - commonSuffixLength] === newText[newText.length - 1 - commonSuffixLength]
+  ) {
+    commonSuffixLength++;
+  }
+  
+  // 相同的前缀部分
+  if (commonPrefixLength > 0) {
+    changes.push({
+      type: 'same',
+      text: newText.slice(0, commonPrefixLength),
+      startIndex: 0,
+    });
+  }
+  
+  // 中间变化的部分
+  const oldMiddle = oldText.slice(commonPrefixLength, oldText.length - commonSuffixLength);
+  const newMiddle = newText.slice(commonPrefixLength, newText.length - commonSuffixLength);
+  
+  if (newMiddle) {
+    changes.push({
+      type: !oldMiddle ? 'added' : 'modified',
+      text: newMiddle,
+      startIndex: commonPrefixLength,
+    });
+  }
+  
+  // 相同的后缀部分
+  if (commonSuffixLength > 0) {
+    changes.push({
+      type: 'same',
+      text: newText.slice(newText.length - commonSuffixLength),
+      startIndex: newText.length - commonSuffixLength,
+    });
+  }
+  
+  return changes;
+};
+
+// 渲染带增量动画的文本
+const renderTextWithAnimation = (currentText: string, prevText: string) => {
+  if (!currentText) return null;
+  if (!prevText) {
+    return (
+      <span className="animate-fade-in">
+        {currentText}
+      </span>
+    );
+  }
+  
+  const changes = computeTextChanges(prevText, currentText);
+  
+  return (
+    <>
+      {changes.map((change, index) => {
+        const key = `${change.startIndex}-${index}`;
+        
+        if (change.type === 'same') {
+          return <span key={key}>{change.text}</span>;
+        } else {
+          return (
+            <span key={key} className="animate-fade-in">
+              {change.text}
+            </span>
+          );
+        }
+      })}
+    </>
+  );
+};
+
+// 对话气泡组件 - 使用 React.memo 避免不必要的重渲染
+const ConversationBubble = React.memo(({ 
   text, 
   type, 
-  isInterim = false 
-}: ConversationBubbleProps) {
+  isInterim = false,
+  prevText = ''
+}: ConversationBubbleProps) => {
   const bgColors = {
     'original': 'bg-gray-50 dark:bg-gray-900 border-gray-300',
     'translation': 'bg-green-50 dark:bg-green-950 border-green-300',
@@ -47,11 +143,13 @@ function ConversationBubble({
       className={`${bgColors[type]} p-3 rounded-lg border ${isInterim ? 'border-2 border-dashed' : ''}`}
     >
       <p className={`text-base whitespace-pre-wrap break-words ${type === 'original' ? 'font-mono' : ''}`}>
-        {text}
+        {isInterim ? renderTextWithAnimation(text, prevText) : text}
       </p>
     </div>
   );
-}
+});
+
+ConversationBubble.displayName = 'ConversationBubble';
 
 export function TranslationAlternate({ 
   className, 
@@ -67,28 +165,55 @@ export function TranslationAlternate({
   const [interimTranslation, setInterimTranslation] = useState<string>('');
   const [isInterim, setIsInterim] = useState<boolean>(false);
   
+  // 用于增量渲染的前一次文本状态
+  const [prevInterimOriginal, setPrevInterimOriginal] = useState<string>('');
+  const [prevInterimTranslation, setPrevInterimTranslation] = useState<string>('');
+  const interimOriginalRef = useRef<string>('');
+  const interimTranslationRef = useRef<string>('');
+  
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // 处理翻译数据
   const handleTranslation = useCallback((payload: TranslationData) => {
     if (payload.type === 'interim') {
-      // 实时更新预览
-      setInterimOriginal(payload.original.text);
+      // 使用 full_text（向后兼容 text）
+      const newOriginal = payload.original.full_text || payload.original.text || '';
+      const previousOriginal = interimOriginalRef.current;
+      setPrevInterimOriginal(previousOriginal);
+      setInterimOriginal(newOriginal);
+      interimOriginalRef.current = newOriginal;
+      
       setInterimOriginalLang(payload.original.language);
       setIsInterim(true);
 
       if (payload.translation) {
-        setInterimTranslation(payload.translation.text);
+        const newTranslation = payload.translation.full_text || payload.translation.text || '';
+        const previousTranslation = interimTranslationRef.current;
+        setPrevInterimTranslation(previousTranslation);
+        setInterimTranslation(newTranslation);
+        interimTranslationRef.current = newTranslation;
       } else {
+        const previousTranslation = interimTranslationRef.current;
+        setPrevInterimTranslation(previousTranslation);
         setInterimTranslation('');
+        interimTranslationRef.current = '';
       }
     } else if (payload.type === 'final') {
-      // Final 状态：追加到对话记录
+      // Final 状态：追加到对话记录，使用 full_text
+      const originalText = payload.original.full_text || payload.original.text || '';
+      const translationText = payload.translation?.full_text || payload.translation?.text || '';
+      
       setConversation((prev) => [
         ...prev,
         {
-          original: payload.original,
-          translation: payload.translation,
+          original: {
+            full_text: originalText,
+            language: payload.original.language,
+          },
+          translation: payload.translation ? {
+            full_text: translationText,
+            language: payload.translation.language,
+          } : null,
           timestamp: payload.timestamp,
         }
       ]);
@@ -97,6 +222,10 @@ export function TranslationAlternate({
       setInterimOriginal('');
       setInterimOriginalLang('');
       setInterimTranslation('');
+      setPrevInterimOriginal('');
+      setPrevInterimTranslation('');
+      interimOriginalRef.current = '';
+      interimTranslationRef.current = '';
       setIsInterim(false);
     }
   }, []);
@@ -131,27 +260,33 @@ export function TranslationAlternate({
         )}
 
         {conversation.map((item, index) => (
-          <div key={index} className="space-y-2">
-            {/* 原始文本 */}
-            {shouldShowOriginal(item) && (
-              <ConversationBubble
-                text={item.original.text}
-                type="original"
-              />
-            )}
-
-            {/* 翻译文本 */}
+          <div key={index}>
+            {/* 有翻译：原文+译文在一个卡片中 */}
             {item.translation && (
-              <ConversationBubble
-                text={item.translation.text}
-                type="translation"
-              />
+              <div className="bg-card p-4 rounded-lg border border-border shadow-sm">
+                {/* 原文部分 */}
+                <div className="pb-3">
+                  <p className="text-base whitespace-pre-wrap break-words font-mono">
+                    {item.original.full_text}
+                  </p>
+                </div>
+                
+                {/* 虚线分割 */}
+                <div className="border-t border-dashed border-border my-3"></div>
+                
+                {/* 译文部分 */}
+                <div className="pt-3">
+                  <p className="text-base whitespace-pre-wrap break-words">
+                    {item.translation.full_text}
+                  </p>
+                </div>
+              </div>
             )}
 
-            {/* 目标语言原生输入 */}
+            {/* 无翻译：目标语言原生输入，单独卡片 */}
             {isTargetNativeInput(item) && (
               <ConversationBubble
-                text={item.original.text}
+                text={item.original.full_text}
                 type="target-native"
               />
             )}
@@ -160,31 +295,36 @@ export function TranslationAlternate({
 
         {/* 实时预览（interim 状态） */}
         {isInterim && (
-          <div className="space-y-2">
-            {/* 原始文本预览 */}
-            {(interimTranslation || interimOriginalLang !== targetLanguage) && interimOriginal && (
-              <ConversationBubble
-                text={interimOriginal}
-                type="original"
-                isInterim
-              />
+          <div>
+            {/* 有翻译：原文+译文在一个卡片中（实时预览） */}
+            {interimTranslation && interimOriginal && (
+              <div className="bg-card p-4 rounded-lg border-2 border-dashed border-primary/50 shadow-sm">
+                {/* 原文部分 */}
+                <div className="pb-3">
+                  <p className="text-base whitespace-pre-wrap break-words font-mono">
+                    {renderTextWithAnimation(interimOriginal, prevInterimOriginal)}
+                  </p>
+                </div>
+                
+                {/* 虚线分割 */}
+                <div className="border-t border-dashed border-border my-3"></div>
+                
+                {/* 译文部分 */}
+                <div className="pt-3">
+                  <p className="text-base whitespace-pre-wrap break-words">
+                    {renderTextWithAnimation(interimTranslation, prevInterimTranslation)}
+                  </p>
+                </div>
+              </div>
             )}
 
-            {/* 翻译预览 */}
-            {interimTranslation && (
-              <ConversationBubble
-                text={interimTranslation}
-                type="translation"
-                isInterim
-              />
-            )}
-
-            {/* 目标语言原生输入预览 */}
+            {/* 目标语言原生输入预览（无翻译） */}
             {interimOriginalLang === targetLanguage && interimOriginal && !interimTranslation && (
               <ConversationBubble
                 text={interimOriginal}
                 type="target-native"
                 isInterim
+                prevText={prevInterimOriginal}
               />
             )}
           </div>

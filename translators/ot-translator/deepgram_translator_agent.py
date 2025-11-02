@@ -98,7 +98,13 @@ class DebouncedTranslator:
             )
             
             translated_text = result['translatedText']
-            logger.info(f"Translated ({source_language} -> {target_language}): {text[:50]}... -> {translated_text[:50]}...")
+            logger.info(
+                "Translated (%s -> %s): %s -> %s",
+                source_language,
+                target_language,
+                text,
+                translated_text,
+            )
             return translated_text
             
         except Exception as e:
@@ -181,6 +187,10 @@ class DeepgramTranslationAgent(Agent):
         self.debounce_enabled = debounce_enabled
         self.translator = DebouncedTranslator(debounce_ms=debounce_ms, enabled=debounce_enabled)
         
+        # 用于跟踪上一次发送的完整文本，以计算增量
+        self.last_sent_original = ""
+        self.last_sent_translation = ""
+        
         logger.info(
             "DeepgramTranslationAgent initialized: %s -> %s, debounce_ms=%s, debounce_enabled=%s",
             source_language,
@@ -188,6 +198,28 @@ class DeepgramTranslationAgent(Agent):
             debounce_ms,
             debounce_enabled,
         )
+    
+    def compute_delta(self, prev_text: str, current_text: str) -> str:
+        """
+        计算两个文本之间的差异（delta）
+        使用最长公共前缀方法，返回新增或修改的部分
+        """
+        if not prev_text:
+            return current_text
+        
+        if not current_text:
+            return ""
+        
+        # 找到最长公共前缀
+        common_prefix_len = 0
+        min_len = min(len(prev_text), len(current_text))
+        
+        while common_prefix_len < min_len and prev_text[common_prefix_len] == current_text[common_prefix_len]:
+            common_prefix_len += 1
+        
+        # 返回新增/修改的部分
+        delta = current_text[common_prefix_len:]
+        return delta
     
     async def update_config(
         self, 
@@ -221,7 +253,10 @@ class DeepgramTranslationAgent(Agent):
         translated_text: Optional[str], 
         is_final: bool
     ):
-        """通过 RPC 发送翻译数据到前端"""
+        """
+        通过 RPC 发送翻译数据到前端
+        同时发送 full_text 和 delta，支持增量渲染和纠错
+        """
         if not self.ctx or not self.ctx.room:
             logger.debug("No room context available for RPC")
             return
@@ -236,15 +271,25 @@ class DeepgramTranslationAgent(Agent):
             # 发送到第一个远程参与者（前端）
             client_participant = remote_participants[0]
             
-            # 准备翻译数据
+            # 计算原文的 delta
+            original_delta = self.compute_delta(self.last_sent_original, original_text)
+            
+            # 计算译文的 delta
+            translation_delta = ""
+            if translated_text:
+                translation_delta = self.compute_delta(self.last_sent_translation, translated_text)
+            
+            # 准备翻译数据（包含 full_text 和 delta）
             translation_data = {
                 "type": "final" if is_final else "interim",
                 "original": {
-                    "text": original_text,
+                    "full_text": original_text,
+                    "delta": original_delta,
                     "language": original_language
                 },
                 "translation": {
-                    "text": translated_text,
+                    "full_text": translated_text,
+                    "delta": translation_delta,
                     "language": self.target_language
                 } if translated_text else None,
                 "timestamp": time.time()
@@ -257,8 +302,19 @@ class DeepgramTranslationAgent(Agent):
                 payload=json.dumps(translation_data)
             )
             
+            # 更新已发送的文本（用于下一次 delta 计算）
+            if is_final:
+                # final 时重置，开始新的句子
+                self.last_sent_original = ""
+                self.last_sent_translation = ""
+            else:
+                # interim 时累积
+                self.last_sent_original = original_text
+                if translated_text:
+                    self.last_sent_translation = translated_text
+            
             log_type = "FINAL" if is_final else "INTERIM"
-            logger.debug(f"[{log_type}] Sent to frontend: {original_language} -> {self.target_language}")
+            logger.debug(f"[{log_type}] Sent to frontend: {original_language} -> {self.target_language}, delta: {len(original_delta)} chars")
             
         except Exception as e:
             logger.warning(f"Failed to send translation via RPC: {e}")

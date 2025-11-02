@@ -138,3 +138,81 @@ pnpm dev
 - **Frontend Framework**: Next.js 15 with React 19
 - **Real-time Updates**: Uses LiveKit RPC for bidirectional communication
 
+## Incremental Rendering Design
+
+### Problem Statement
+
+Real-time ASR systems (like Deepgram) and machine translation APIs (like Google Translate) continuously refine their output. They don't just append new content—they often revise previously transcribed or translated text. For example:
+- ASR might change "纽约" (New York) to "牛月" as more context arrives
+- Translation might rephrase earlier words for better fluency
+
+A naive "append-only" approach would preserve these errors, creating a poor user experience.
+
+### Solution Architecture
+
+Our implementation uses a **full_text + delta** approach:
+
+#### 1. Data Structure
+
+```typescript
+{
+  type: 'interim' | 'final',
+  original: {
+    full_text: string,    // Complete current text
+    delta: string,        // New/modified portion
+    language: string
+  },
+  translation: {
+    full_text: string,    // Complete translation
+    delta: string,        // New/modified portion  
+    language: string
+  }
+}
+```
+
+#### 2. Backend Logic (`deepgram_translator_agent.py`)
+
+**Interim Updates:**
+- Calculate delta using longest common prefix algorithm
+- Send both `full_text` (for correction) and `delta` (for animation)
+- Track last sent text to compute next delta
+
+**Final Updates:**
+- Send complete final text as `full_text`
+- Reset tracking state for next sentence
+
+#### 3. Frontend Rendering
+
+**Display Strategy:**
+- Always render using `full_text` to ensure correctness
+- Use `delta` information to drive fade-in animations on new content
+- Existing text automatically updates when revised by ASR/translation
+
+**Benefits:**
+- ✅ Smooth "typewriter" visual effect from delta animations
+- ✅ Automatic correction when ASR/translation revises text
+- ✅ No accumulated errors from append-only approach
+- ✅ Works with any real-time ASR/translation provider
+
+### Example Flow
+
+```
+Time 1 (interim):
+  full_text: "今天纽约"
+  delta: "今天纽约"
+  → UI shows: "今天纽约" (with fade-in)
+
+Time 2 (interim):  
+  full_text: "今天牛月天气"  
+  delta: "牛月天气"
+  → UI updates: "今天牛月天气"
+  → "纽约" corrected to "牛月", "天气" fades in
+
+Time 3 (final):
+  full_text: "今天纽约天气"
+  → Historical record: "今天纽约天气"
+  → Interim state cleared
+```
+
+This design ensures users see both smooth real-time updates AND accurate final results, regardless of how the underlying ASR or translation systems behave.
+

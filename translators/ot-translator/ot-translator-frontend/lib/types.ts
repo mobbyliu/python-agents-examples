@@ -34,12 +34,18 @@ export interface SandboxConfig {
 export interface TranslationData {
   type: 'interim' | 'final';
   original: {
-    text: string;
+    full_text: string;
+    delta: string;
     language: string;
+    // 向后兼容旧字段
+    text?: string;
   };
   translation: {
-    text: string;
+    full_text: string;
+    delta: string;
     language: string;
+    // 向后兼容旧字段
+    text?: string;
   } | null;
   timestamp: number;
 }

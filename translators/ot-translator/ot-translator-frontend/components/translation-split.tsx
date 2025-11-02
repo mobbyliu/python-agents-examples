@@ -51,15 +51,15 @@ export function TranslationSplit({
 
   // 处理翻译数据
   const handleTranslation = useCallback((payload: TranslationData) => {
-    // 原文处理
+    // 原文处理 - 使用 full_text（向后兼容 text）
     if (payload.type === 'interim') {
-      const newOriginal = payload.original.text;
+      const newOriginal = payload.original.full_text || payload.original.text || '';
       setPrevOriginal(currentOriginalRef.current);
       setCurrentOriginal(newOriginal);
       currentOriginalRef.current = newOriginal;
       setCurrentLanguage(payload.original.language);
     } else if (payload.type === 'final') {
-      const newOriginal = payload.original.text;
+      const newOriginal = payload.original.full_text || payload.original.text || '';
       setPrevOriginal(currentOriginalRef.current);
       setCurrentOriginal(newOriginal);
       currentOriginalRef.current = newOriginal;
@@ -72,9 +72,9 @@ export function TranslationSplit({
       setCurrentLanguage(payload.original.language);
     }
 
-    // 译文处理
+    // 译文处理 - 使用 full_text（向后兼容 text）
     if (payload.translation) {
-      const newTranslation = payload.translation.text;
+      const newTranslation = payload.translation.full_text || payload.translation.text || '';
 
       if (payload.type === 'interim') {
         setPrevTranslation(currentTranslationRef.current);
