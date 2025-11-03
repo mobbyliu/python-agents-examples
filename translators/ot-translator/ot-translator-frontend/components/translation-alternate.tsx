@@ -296,8 +296,8 @@ export function TranslationAlternate({
         {/* 实时预览（interim 状态） */}
         {isInterim && (
           <div>
-            {/* 有翻译：原文+译文在一个卡片中（实时预览） */}
-            {interimTranslation && interimOriginal && (
+            {/* 需要翻译的内容：原文+译文在一个卡片中（实时预览） */}
+            {interimOriginal && interimOriginalLang !== targetLanguage && (
               <div className="bg-card p-4 rounded-lg border-2 border-dashed border-primary/50 shadow-sm">
                 {/* 原文部分 */}
                 <div className="pb-3">
@@ -309,17 +309,23 @@ export function TranslationAlternate({
                 {/* 虚线分割 */}
                 <div className="border-t border-dashed border-border my-3"></div>
                 
-                {/* 译文部分 */}
+                {/* 译文部分 - 可能还在翻译中 */}
                 <div className="pt-3">
-                  <p className="text-base whitespace-pre-wrap break-words">
-                    {renderTextWithAnimation(interimTranslation, prevInterimTranslation)}
-                  </p>
+                  {interimTranslation ? (
+                    <p className="text-base whitespace-pre-wrap break-words">
+                      {renderTextWithAnimation(interimTranslation, prevInterimTranslation)}
+                    </p>
+                  ) : (
+                    <p className="text-base text-muted-foreground/50">
+                      翻译中...
+                    </p>
+                  )}
                 </div>
               </div>
             )}
 
             {/* 目标语言原生输入预览（无翻译） */}
-            {interimOriginalLang === targetLanguage && interimOriginal && !interimTranslation && (
+            {interimOriginalLang === targetLanguage && interimOriginal && (
               <ConversationBubble
                 text={interimOriginal}
                 type="target-native"

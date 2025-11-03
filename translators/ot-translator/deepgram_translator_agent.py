@@ -90,6 +90,9 @@ class DebouncedTranslator:
             if source_language == target_language:
                 return text
             
+            # 记录开始时间
+            start_time = time.time()
+            
             # 调用 Google Translate API
             result = self.translate_client.translate(
                 text,
@@ -97,11 +100,15 @@ class DebouncedTranslator:
                 source_language=source_language
             )
             
+            # 计算耗时
+            elapsed_ms = (time.time() - start_time) * 1000
+            
             translated_text = result['translatedText']
             logger.info(
-                "Translated (%s -> %s): %s -> %s",
+                "Translated (%s -> %s) in %.0fms: %s -> %s",
                 source_language,
                 target_language,
+                elapsed_ms,
                 text,
                 translated_text,
             )
@@ -364,16 +371,8 @@ class DeepgramTranslationAgent(Agent):
                                 is_final = alt.is_final
                             
                             if is_final:
-                                # FINAL 结果：立即翻译并发送
+                                # FINAL 结果：等待翻译完成后一起发送
                                 logger.info(f"[FINAL] Original ({self.source_language}): {transcript}")
-                                
-                                # 先发送原文（无翻译）到前端，让用户立即看到
-                                await self.send_translation_to_frontend(
-                                    original_text=transcript,
-                                    original_language=self.source_language,
-                                    translated_text=None,
-                                    is_final=False
-                                )
                                 
                                 # 执行翻译（不使用防抖）
                                 translated = await self.translator.translate_text(
@@ -382,7 +381,7 @@ class DeepgramTranslationAgent(Agent):
                                     self.target_language
                                 )
                                 
-                                # 发送最终的翻译结果
+                                # 翻译完成后，一次性发送原文+译文
                                 await self.send_translation_to_frontend(
                                     original_text=transcript,
                                     original_language=self.source_language,
