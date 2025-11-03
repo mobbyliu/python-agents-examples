@@ -231,11 +231,14 @@ class DeepgramTranslationAgent(Agent):
     async def update_config(
         self, 
         source_language: Optional[str] = None, 
-        target_language: Optional[str] = None,
-        debounce_ms: Optional[float] = None,
-        debounce_enabled: Optional[bool] = None
+        target_language: Optional[str] = None
     ):
-        """更新翻译配置"""
+        """更新翻译配置（语言对）
+        
+        注意：防抖配置（debounce_ms 和 debounce_enabled）通过后端环境变量控制：
+        - TRANSLATION_DEBOUNCE_MS: 防抖延迟（毫秒）
+        - TRANSLATION_DEBOUNCE_ENABLED: 是否启用防抖
+        """
         if source_language:
             self.source_language = source_language
             logger.info(f"Source language updated to: {source_language}")
@@ -243,15 +246,6 @@ class DeepgramTranslationAgent(Agent):
         if target_language:
             self.target_language = target_language
             logger.info(f"Target language updated to: {target_language}")
-        
-        if debounce_ms is not None:
-            self.translator.update_debounce_delay(debounce_ms)
-
-        if debounce_enabled is not None:
-            if isinstance(debounce_enabled, str):
-                debounce_enabled = debounce_enabled.strip().lower() in {"1", "true", "yes", "on"}
-            self.debounce_enabled = debounce_enabled
-            self.translator.update_enabled(debounce_enabled)
     
     async def send_translation_to_frontend(
         self, 
@@ -444,15 +438,13 @@ async def entrypoint(ctx: JobContext):
     # 先连接房间
     await ctx.connect()
     
-    # 注册 RPC 方法：接收前端的配置更新
+    # 注册 RPC 方法：接收前端的语言配置更新
     async def handle_update_config(data: rtc.RpcInvocationData) -> str:
         try:
             config = json.loads(data.payload)
             await agent.update_config(
                 source_language=config.get('source'),
-                target_language=config.get('target'),
-                debounce_ms=config.get('debounce'),
-                debounce_enabled=config.get('debounce_enabled')
+                target_language=config.get('target')
             )
             return json.dumps({"status": "success", "message": "Configuration updated"})
         except Exception as e:

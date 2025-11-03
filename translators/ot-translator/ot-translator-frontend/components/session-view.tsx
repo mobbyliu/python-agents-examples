@@ -98,22 +98,6 @@ export const SessionView = ({
     }
     return 'zh';
   });
-  const [debounceMs, setDebounceMs] = useState<number>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('translation_debounce_ms');
-      return saved ? parseInt(saved) : 500;
-    }
-    return 500;
-  });
-  const [debounceEnabled, setDebounceEnabled] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('translation_debounce_enabled');
-      if (saved !== null) {
-        return saved === 'true';
-      }
-    }
-    return true;
-  });
   const [showConfig, setShowConfig] = useState<boolean>(false);
 
   useDebugMode();
@@ -147,15 +131,11 @@ export const SessionView = ({
       // 保存到 localStorage
       localStorage.setItem('translation_source_language', sourceLanguage);
       localStorage.setItem('translation_target_language', targetLanguage);
-      localStorage.setItem('translation_debounce_ms', debounceMs.toString());
-      localStorage.setItem('translation_debounce_enabled', debounceEnabled ? 'true' : 'false');
 
-      // 发送配置到后端
+      // 发送配置到后端（防抖配置由后端环境变量控制）
       const payload = {
         source: sourceLanguage,
         target: targetLanguage,
-        debounce: debounceMs,
-        debounce_enabled: debounceEnabled,
       };
 
       const result = await room.localParticipant.performRpc({
@@ -324,7 +304,7 @@ export const SessionView = ({
                   </button>
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* 源语言选择 */}
                   <div>
                     <label className="block text-xs text-muted-foreground mb-1">源语言</label>
@@ -356,42 +336,10 @@ export const SessionView = ({
                       ))}
                     </select>
                   </div>
-                  
-                  {/* 防抖延迟 */}
-                  <div>
-                    <label className="block text-xs text-muted-foreground mb-1">
-                      防抖延迟: {debounceMs}ms
-                    </label>
-                    <input
-                      type="range"
-                      min="100"
-                      max="1000"
-                      step="50"
-                      value={debounceMs}
-                      onChange={(e) => setDebounceMs(parseInt(e.target.value))}
-                      className="w-full"
-                    />
-                    <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                      <span>更快</span>
-                      <span>更稳</span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col justify-between">
-                    <label className="block text-xs text-muted-foreground mb-1">译文防抖</label>
-                    <label className="inline-flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={debounceEnabled}
-                        onChange={(e) => setDebounceEnabled(e.target.checked)}
-                        className="h-4 w-4 accent-primary"
-                      />
-                      <span>{debounceEnabled ? '开启' : '关闭'}</span>
-                    </label>
-                    <span className="text-xs text-muted-foreground mt-1">
-                      关闭后译文将在每次识别更新时立即出现
-                    </span>
-                  </div>
+                </div>
+                
+                <div className="text-xs text-muted-foreground mt-2">
+                  💡 防抖延迟和译文防抖设置由后端环境变量控制
                 </div>
                 
                 <div className="mt-4 flex justify-end gap-2">
