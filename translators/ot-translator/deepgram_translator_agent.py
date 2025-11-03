@@ -20,7 +20,7 @@ from livekit.agents import JobContext, WorkerOptions, cli
 from livekit.agents.voice import Agent, AgentSession
 from livekit.plugins import silero, deepgram
 from livekit import rtc
-from typing import Optional, AsyncIterable
+from typing import Optional, AsyncIterable, List, Callable, Dict
 from google.cloud import translate_v2 as translate
 import sys
 import json
@@ -28,6 +28,7 @@ import logging
 import asyncio
 import time
 import os
+from dataclasses import dataclass
 
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
@@ -35,6 +36,208 @@ load_dotenv(dotenv_path=Path(__file__).parent.parent.parent / '.env')
 
 logger = logging.getLogger("deepgram-translator")
 logger.setLevel(logging.INFO)
+
+
+@dataclass
+class PendingSentence:
+    """待翻译的句子"""
+    sequence: int          # 全局序号
+    text: str             # 原文
+    timestamp: float      # 接收时间
+
+
+class AdaptiveBatchCollector:
+    """
+    自适应批量收集器
+    - 批次为空：立即翻译（无额外延迟）
+    - 批次有句子：加入批量（利用批量优势）
+    """
+    
+    def __init__(
+        self, 
+        batch_size: int = 3,
+        batch_timeout_ms: float = 500,
+        translate_callback: Callable = None
+    ):
+        self.batch_size = batch_size
+        self.batch_timeout = batch_timeout_ms / 1000
+        self.translate_callback = translate_callback
+        
+        self.pending_batch: List[PendingSentence] = []
+        self.batch_timer: Optional[asyncio.Task] = None
+        self.lock = asyncio.Lock()
+    
+    async def add_sentence(self, sequence: int, text: str):
+        """
+        添加句子到批次
+        
+        核心逻辑：
+        1. 如果批次为空 → 立即触发翻译
+        2. 如果批次不为空 → 加入批次，等待触发
+        """
+        async with self.lock:
+            sentence = PendingSentence(
+                sequence=sequence,
+                text=text,
+                timestamp=time.time()
+            )
+            
+            # 🔑 关键判断：批次是否为空
+            is_batch_empty = len(self.pending_batch) == 0
+            
+            self.pending_batch.append(sentence)
+            
+            if is_batch_empty:
+                # 情况1：批次为空，说明没有积压
+                # → 立即翻译，不等待
+                logger.info(f"[ADAPTIVE] seq={sequence}, batch empty, immediate translation")
+                await self._flush_batch()
+            else:
+                # 情况2：批次已有句子，说明有积压
+                # → 利用批量优势
+                logger.info(f"[ADAPTIVE] seq={sequence}, batch has {len(self.pending_batch)} sentences")
+                
+                if len(self.pending_batch) >= self.batch_size:
+                    # 达到批次大小，立即批量翻译
+                    logger.info(f"[ADAPTIVE] Batch size reached, flushing")
+                    await self._flush_batch()
+                else:
+                    # 启动定时器，超时后批量翻译
+                    if self.batch_timer:
+                        self.batch_timer.cancel()
+                    self.batch_timer = asyncio.create_task(self._delayed_flush())
+    
+    async def _delayed_flush(self):
+        """延迟触发批量翻译"""
+        await asyncio.sleep(self.batch_timeout)
+        async with self.lock:
+            if self.pending_batch:
+                logger.info(f"[ADAPTIVE] Batch timeout, flushing {len(self.pending_batch)} sentences")
+                await self._flush_batch()
+    
+    async def _flush_batch(self):
+        """执行批量翻译"""
+        if not self.pending_batch:
+            return
+        
+        batch = self.pending_batch
+        self.pending_batch = []
+        
+        # 取消定时器
+        if self.batch_timer:
+            self.batch_timer.cancel()
+            self.batch_timer = None
+        
+        # 调用翻译回调
+        if self.translate_callback:
+            await self.translate_callback(batch)
+
+
+class BatchTranslator:
+    """批量翻译器：调用Google Translate批量API"""
+    
+    def __init__(self, translate_client):
+        self.translate_client = translate_client
+    
+    async def translate_batch(
+        self,
+        texts: List[str],
+        source_language: str,
+        target_language: str
+    ) -> List[Optional[str]]:
+        """
+        批量翻译多个文本
+        
+        Args:
+            texts: 文本列表 ["Hello", "How are you", ...]
+            
+        Returns:
+            翻译结果列表 ["你好", "你好吗", ...]
+        """
+        if not texts:
+            return []
+        
+        if source_language == target_language:
+            return texts
+        
+        try:
+            start_time = time.time()
+            
+            # ✅ 批量调用 Google Translate API
+            # API支持传入列表
+            results = self.translate_client.translate(
+                texts,
+                target_language=target_language,
+                source_language=source_language
+            )
+            
+            elapsed_ms = (time.time() - start_time) * 1000
+            
+            # 提取翻译结果
+            translations = []
+            if isinstance(results, list):
+                for result in results:
+                    translations.append(result.get('translatedText'))
+            else:
+                # 单个结果的情况
+                translations.append(results.get('translatedText'))
+            
+            logger.info(
+                f"[BATCH] Translated {len(texts)} texts in {elapsed_ms:.0f}ms "
+                f"(avg {elapsed_ms/len(texts):.0f}ms per text)"
+            )
+            
+            return translations
+            
+        except Exception as e:
+            logger.error(f"Batch translation error: {e}")
+            # 失败时返回None列表
+            return [None] * len(texts)
+
+
+class OrderedDispatcher:
+    """
+    顺序分发器：确保翻译结果按序号发送到前端
+    
+    问题场景：
+    - 句子1（长文本）：翻译需要800ms
+    - 句子2（短文本）：翻译只需200ms
+    - 如果句子2先完成，也要等句子1发送后再发送
+    """
+    
+    def __init__(self, send_callback: Callable):
+        self.send_callback = send_callback
+        self.next_sequence = 0  # 下一个应该发送的序号
+        self.pending_results: Dict[int, tuple] = {}  # {sequence: (original, translated)}
+        self.lock = asyncio.Lock()
+    
+    async def add_result(
+        self,
+        sequence: int,
+        original_text: str,
+        translated_text: Optional[str]
+    ):
+        """添加翻译结果"""
+        async with self.lock:
+            self.pending_results[sequence] = (original_text, translated_text)
+            logger.debug(f"[DISPATCHER] Added seq={sequence}, next={self.next_sequence}")
+            await self._flush_results()
+    
+    async def _flush_results(self):
+        """按顺序发送所有可发送的结果"""
+        while self.next_sequence in self.pending_results:
+            original, translated = self.pending_results.pop(self.next_sequence)
+            
+            logger.info(f"[DISPATCHER] Sending seq={self.next_sequence}")
+            
+            # 调用回调发送到前端
+            await self.send_callback(
+                original_text=original,
+                translated_text=translated,
+                is_final=True
+            )
+            
+            self.next_sequence += 1
 
 
 class DebouncedTranslator:
@@ -161,6 +364,14 @@ class DebouncedTranslator:
         
         # 创建新的待处理任务
         self.pending_task = asyncio.create_task(delayed_translate())
+    
+    def cancel_pending_interim(self):
+        """取消待处理的interim翻译（由final调用）"""
+        if self.pending_task and not self.pending_task.done():
+            self.pending_task.cancel()
+            logger.info("✅ Cancelled pending interim translation (final arrived)")
+            return True
+        return False
 
 
 class DeepgramTranslationAgent(Agent):
@@ -170,7 +381,9 @@ class DeepgramTranslationAgent(Agent):
         source_language: str = "en",
         target_language: str = "zh",
         debounce_ms: float = 500,
-        debounce_enabled: bool = True
+        debounce_enabled: bool = True,
+        batch_size: int = 3,
+        batch_timeout_ms: float = 500
     ):
         # 配置 Deepgram STT
         # 注意：Deepgram 支持的语言代码可能与 Google Translate 不同
@@ -198,12 +411,39 @@ class DeepgramTranslationAgent(Agent):
         self.last_sent_original = ""
         self.last_sent_translation = ""
         
+        # ═══════════════════════════════════════════════
+        # 自适应批量翻译组件
+        # ═══════════════════════════════════════════════
+        
+        # 句子序号计数器
+        self.sentence_sequence = 0
+        
+        # 批量翻译器
+        self.batch_translator = BatchTranslator(
+            translate_client=self.translator.translate_client
+        )
+        
+        # 顺序分发器
+        self.dispatcher = OrderedDispatcher(
+            send_callback=self._send_to_frontend_final
+        )
+        
+        # 自适应批量收集器
+        self.batch_collector = AdaptiveBatchCollector(
+            batch_size=batch_size,
+            batch_timeout_ms=batch_timeout_ms,
+            translate_callback=self._handle_batch_translation
+        )
+        
         logger.info(
-            "DeepgramTranslationAgent initialized: %s -> %s, debounce_ms=%s, debounce_enabled=%s",
+            "DeepgramTranslationAgent initialized: %s -> %s, debounce_ms=%s, debounce_enabled=%s, "
+            "batch_size=%s, batch_timeout_ms=%s",
             source_language,
             target_language,
             debounce_ms,
             debounce_enabled,
+            batch_size,
+            batch_timeout_ms,
         )
     
     def compute_delta(self, prev_text: str, current_text: str) -> str:
@@ -246,6 +486,49 @@ class DeepgramTranslationAgent(Agent):
         if target_language:
             self.target_language = target_language
             logger.info(f"Target language updated to: {target_language}")
+    
+    async def _handle_batch_translation(self, batch: List[PendingSentence]):
+        """处理一批句子的翻译"""
+        if not batch:
+            return
+        
+        # 提取文本列表和序号
+        texts = [s.text for s in batch]
+        sequences = [s.sequence for s in batch]
+        
+        logger.info(
+            f"[BATCH] Translating {len(batch)} sentences: "
+            f"seq={sequences}, texts={[t[:20]+'...' for t in texts]}"
+        )
+        
+        # 批量翻译
+        translations = await self.batch_translator.translate_batch(
+            texts=texts,
+            source_language=self.source_language,
+            target_language=self.target_language
+        )
+        
+        # 添加到顺序分发器
+        for i, sentence in enumerate(batch):
+            await self.dispatcher.add_result(
+                sequence=sentence.sequence,
+                original_text=sentence.text,
+                translated_text=translations[i] if i < len(translations) else None
+            )
+    
+    async def _send_to_frontend_final(
+        self,
+        original_text: str,
+        translated_text: Optional[str],
+        is_final: bool
+    ):
+        """发送final结果到前端（内部方法）"""
+        await self.send_translation_to_frontend(
+            original_text=original_text,
+            original_language=self.source_language,
+            translated_text=translated_text,
+            is_final=is_final
+        )
     
     async def send_translation_to_frontend(
         self, 
@@ -365,22 +648,29 @@ class DeepgramTranslationAgent(Agent):
                                 is_final = alt.is_final
                             
                             if is_final:
-                                # FINAL 结果：等待翻译完成后一起发送
-                                logger.info(f"[FINAL] Original ({self.source_language}): {transcript}")
+                                # ═══════════════════════════════
+                                # FINAL 结果：自适应批量翻译
+                                # ═══════════════════════════════
                                 
-                                # 执行翻译（不使用防抖）
-                                translated = await self.translator.translate_text(
-                                    transcript,
-                                    self.source_language,
-                                    self.target_language
+                                # 分配全局序号
+                                sequence = self.sentence_sequence
+                                self.sentence_sequence += 1
+                                
+                                logger.info(
+                                    f"[FINAL] seq={sequence}, "
+                                    f"text='{transcript[:50]}...'"
                                 )
                                 
-                                # 翻译完成后，一次性发送原文+译文
-                                await self.send_translation_to_frontend(
-                                    original_text=transcript,
-                                    original_language=self.source_language,
-                                    translated_text=translated,
-                                    is_final=True
+                                # ✅ 优化1：取消无效的interim翻译
+                                cancelled = self.translator.cancel_pending_interim()
+                                if cancelled:
+                                    logger.debug(
+                                        f"[FINAL] Cancelled interim for '{transcript[:30]}...'"
+                                    )
+                                
+                                # ✅ 优化2：加入自适应批量收集器（不阻塞）
+                                asyncio.create_task(
+                                    self.batch_collector.add_sentence(sequence, transcript)
                                 )
                                 
                                 # 清除 interim 缓存
@@ -424,13 +714,19 @@ async def entrypoint(ctx: JobContext):
     debounce_enabled_env = os.getenv("TRANSLATION_DEBOUNCE_ENABLED", "true")
     debounce_enabled = debounce_enabled_env.strip().lower() in {"1", "true", "yes", "on"}
     
+    # 批量翻译配置
+    batch_size = int(os.getenv("TRANSLATION_BATCH_SIZE", "3"))
+    batch_timeout_ms = float(os.getenv("TRANSLATION_BATCH_TIMEOUT_MS", "2000"))  # 2秒，匹配实际语速
+    
     # 创建带上下文的 agent
     agent = DeepgramTranslationAgent(
         ctx=ctx,
         source_language=source_language,
         target_language=target_language,
         debounce_ms=debounce_ms,
-        debounce_enabled=debounce_enabled
+        debounce_enabled=debounce_enabled,
+        batch_size=batch_size,
+        batch_timeout_ms=batch_timeout_ms
     )
     
     session = AgentSession()

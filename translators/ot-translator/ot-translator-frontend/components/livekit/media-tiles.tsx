@@ -123,43 +123,6 @@ export function MediaTiles({ chatOpen }: MediaTilesProps) {
 
   return (
     <div className="pointer-events-none fixed inset-0 z-50">
-      {/* Audio Visualizer - Fixed to bottom right corner */}
-      <div className="absolute right-4 bottom-16 md:right-8 md:bottom-20">
-        <AnimatePresence mode="popLayout">
-          {!isAvatar && (
-            // audio-only agent - compact size in corner
-            <MotionAgentTile
-              key="agent"
-              layoutId="agent"
-              {...animationProps}
-              animate={{
-                ...animationProps.animate,
-                transition: animationProps.transition,
-              }}
-              transition={agentLayoutTransition}
-              state={agentState}
-              audioTrack={agentAudioTrack}
-              className="h-[60px]"
-            />
-          )}
-          {isAvatar && (
-            // avatar agent - compact size in corner
-            <MotionAvatarTile
-              key="avatar"
-              layoutId="avatar"
-              {...animationProps}
-              animate={{
-                ...animationProps.animate,
-                transition: animationProps.transition,
-              }}
-              transition={avatarLayoutTransition}
-              videoTrack={agentVideoTrack}
-              className="h-[60px] [&>video]:h-[60px] [&>video]:w-auto"
-            />
-          )}
-        </AnimatePresence>
-      </div>
-
       {/* Camera/Screen Share - top right corner */}
       <div className="absolute right-4 top-6 md:right-8 md:top-8">
         <AnimatePresence>

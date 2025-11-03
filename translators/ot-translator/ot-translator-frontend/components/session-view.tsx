@@ -236,7 +236,7 @@ export const SessionView = ({
 
       {/* Translation Display - With Tab Navigation */}
       {sessionStarted && (
-        <div className="fixed inset-4 top-4 bottom-20 md:inset-6 md:top-6 md:bottom-24 flex z-30 bg-background/80 backdrop-blur-sm border border-border rounded-lg overflow-hidden shadow-lg">
+        <div className="fixed inset-4 top-4 bottom-28 md:inset-6 md:top-6 md:bottom-32 flex z-30 bg-background/80 backdrop-blur-sm border border-border rounded-lg overflow-hidden shadow-lg">
           {/* Left Tab Navigation */}
           <div className="hidden lg:flex flex-col gap-2 p-3 bg-muted/50 border-r border-border w-40 flex-shrink-0">
             <div className="text-xs font-semibold text-muted-foreground px-2 mb-1">
@@ -401,8 +401,6 @@ export const SessionView = ({
               onSendMessage={handleSendMessage}
             />
           </div>
-          {/* skrim */}
-          <div className="from-background border-background absolute top-0 left-0 h-12 w-full -translate-y-full bg-gradient-to-t to-transparent" />
         </motion.div>
       </div>
     </main>
