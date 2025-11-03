@@ -186,18 +186,15 @@ export function TranslationAlternate({
       setInterimOriginalLang(payload.original.language);
       setIsInterim(true);
 
+      // 只在有新翻译时才更新，否则保持原有翻译不变
       if (payload.translation) {
         const newTranslation = payload.translation.full_text || payload.translation.text || '';
         const previousTranslation = interimTranslationRef.current;
         setPrevInterimTranslation(previousTranslation);
         setInterimTranslation(newTranslation);
         interimTranslationRef.current = newTranslation;
-      } else {
-        const previousTranslation = interimTranslationRef.current;
-        setPrevInterimTranslation(previousTranslation);
-        setInterimTranslation('');
-        interimTranslationRef.current = '';
       }
+      // 如果 payload.translation 为 null，保持 interimTranslation 的当前值不变
     } else if (payload.type === 'final') {
       // Final 状态：追加到对话记录，使用 full_text
       const originalText = payload.original.full_text || payload.original.text || '';
