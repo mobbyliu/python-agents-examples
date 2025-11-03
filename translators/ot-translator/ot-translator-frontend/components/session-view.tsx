@@ -228,7 +228,7 @@ export const SessionView = ({
     >
       <ChatMessageView
         className={cn(
-          'mx-auto min-h-svh w-full max-w-2xl px-3 pt-32 pb-40 transition-[opacity,translate] duration-300 ease-out md:px-0 md:pt-36 md:pb-48',
+          'mx-auto min-h-svh w-full max-w-2xl px-3 pt-20 pb-32 transition-[opacity,translate] duration-300 ease-out md:px-0 md:pt-24 md:pb-36',
           chatOpen ? 'translate-y-0 opacity-100 delay-200' : 'translate-y-20 opacity-0'
         )}
       >
@@ -249,14 +249,14 @@ export const SessionView = ({
         </div>
       </ChatMessageView>
 
-      <div className="bg-background mp-12 fixed top-0 right-0 left-0 h-32 md:h-36">
+      <div className="bg-background fixed top-0 right-0 left-0 h-0">
         {/* skrim */}
-        <div className="from-background absolute bottom-0 left-0 h-12 w-full translate-y-full bg-gradient-to-b to-transparent" />
+        <div className="from-background absolute bottom-0 left-0 h-8 w-full translate-y-full bg-gradient-to-b to-transparent" />
       </div>
 
       {/* Translation Display - With Tab Navigation */}
       {sessionStarted && (
-        <div className="fixed left-1/2 -translate-x-1/2 top-32 bottom-28 w-full max-w-5xl hidden lg:flex z-40 bg-background/80 backdrop-blur-sm border border-border rounded-lg overflow-hidden shadow-lg">
+        <div className="fixed inset-4 top-4 bottom-20 md:inset-6 md:top-6 md:bottom-24 flex z-30 bg-background/80 backdrop-blur-sm border border-border rounded-lg overflow-hidden shadow-lg">
           {/* Left Tab Navigation */}
           <div className="hidden lg:flex flex-col gap-2 p-3 bg-muted/50 border-r border-border w-40 flex-shrink-0">
             <div className="text-xs font-semibold text-muted-foreground px-2 mb-1">
@@ -447,27 +447,6 @@ export const SessionView = ({
           transition={{ duration: 0.3, delay: sessionStarted ? 0.5 : 0, ease: 'easeOut' }}
         >
           <div className="relative z-10 mx-auto w-full max-w-2xl">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{
-                opacity: sessionStarted && messages.length === 0 ? 1 : 0,
-                transition: {
-                  ease: 'easeIn',
-                  delay: messages.length > 0 ? 0 : 0.8,
-                  duration: messages.length > 0 ? 0.2 : 0.5,
-                },
-              }}
-              aria-hidden={messages.length > 0}
-              className={cn(
-                'absolute inset-x-0 -top-12 text-center',
-                sessionStarted && messages.length === 0 && 'pointer-events-none'
-              )}
-            >
-              <p className="animate-text-shimmer inline-block !bg-clip-text text-sm font-semibold text-transparent">
-                Agent is listening, ask it a question
-              </p>
-            </motion.div>
-
             <AgentControlBar
               capabilities={capabilities}
               onChatOpenChange={setChatOpen}
