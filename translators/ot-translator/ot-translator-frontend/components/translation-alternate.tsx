@@ -140,7 +140,7 @@ const ConversationBubble = React.memo(({
 
   return (
     <div 
-      className={`${bgColors[type]} p-3 rounded-lg border ${isInterim ? 'border-2 border-dashed' : ''}`}
+      className={`${bgColors[type]} p-2 rounded-lg border ${isInterim ? 'border-2 border-dashed' : ''}`}
     >
       <p className={`text-base whitespace-pre-wrap break-words ${type === 'original' ? 'font-mono' : ''}`}>
         {isInterim ? renderTextWithAnimation(text, prevText) : text}
@@ -247,7 +247,7 @@ export function TranslationAlternate({
     <div className={`flex flex-col h-full ${className || ''}`}>
       <div
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto p-4 space-y-4"
+        className="flex-1 overflow-y-auto p-3 space-y-2"
       >
         {/* 累积的对话记录 */}
         {conversation.length === 0 && !isInterim && (
@@ -260,19 +260,19 @@ export function TranslationAlternate({
           <div key={index}>
             {/* 有翻译：原文+译文在一个卡片中 */}
             {item.translation && (
-              <div className="bg-card p-4 rounded-lg border border-border shadow-sm">
+              <div className="bg-card p-2 rounded-lg border border-border shadow-sm">
                 {/* 原文部分 */}
-                <div className="pb-3">
+                <div className="pb-1.5">
                   <p className="text-base whitespace-pre-wrap break-words font-mono">
                     {item.original.full_text}
                   </p>
                 </div>
                 
                 {/* 虚线分割 */}
-                <div className="border-t border-dashed border-border my-3"></div>
+                <div className="border-t border-dashed border-border my-1.5"></div>
                 
                 {/* 译文部分 */}
-                <div className="pt-3">
+                <div className="pt-1.5">
                   <p className="text-base whitespace-pre-wrap break-words">
                     {item.translation.full_text}
                   </p>
@@ -295,19 +295,19 @@ export function TranslationAlternate({
           <div>
             {/* 需要翻译的内容：原文+译文在一个卡片中（实时预览） */}
             {interimOriginal && interimOriginalLang !== targetLanguage && (
-              <div className="bg-card p-4 rounded-lg border-2 border-dashed border-primary/50 shadow-sm">
+              <div className="bg-card p-2 rounded-lg border-2 border-dashed border-primary/50 shadow-sm">
                 {/* 原文部分 */}
-                <div className="pb-3">
+                <div className="pb-1.5">
                   <p className="text-base whitespace-pre-wrap break-words font-mono">
                     {renderTextWithAnimation(interimOriginal, prevInterimOriginal)}
                   </p>
                 </div>
                 
                 {/* 虚线分割 */}
-                <div className="border-t border-dashed border-border my-3"></div>
+                <div className="border-t border-dashed border-border my-1.5"></div>
                 
                 {/* 译文部分 - 可能还在翻译中 */}
-                <div className="pt-3">
+                <div className="pt-1.5">
                   {interimTranslation ? (
                     <p className="text-base whitespace-pre-wrap break-words">
                       {renderTextWithAnimation(interimTranslation, prevInterimTranslation)}

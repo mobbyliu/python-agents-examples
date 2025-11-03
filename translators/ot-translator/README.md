@@ -216,3 +216,45 @@ Time 3 (final):
 
 This design ensures users see both smooth real-time updates AND accurate final results, regardless of how the underlying ASR or translation systems behave.
 
+## Display Modes
+
+The system supports two real-time display modes that control how interim (non-final) translations are shown:
+
+### 1. Async Mode (Default) ⚡
+- **Behavior**: Original text is displayed immediately, translation appears shortly after
+- **Advantage**: Faster response time - users see original text instantly
+- **Use Case**: When speed and responsiveness are critical
+- **Setting**: `TRANSLATION_SYNC_DISPLAY_MODE=false` (backend)
+
+### 2. Sync Mode 🔄  
+- **Behavior**: System waits for translation to complete, then displays both original and translation together
+- **Advantage**: Cleaner visual experience - no "translation lag" effect
+- **Use Case**: When synchronized presentation is more important than instant feedback
+- **Setting**: `TRANSLATION_SYNC_DISPLAY_MODE=true` (backend)
+
+### Configuration
+
+**Backend (Environment Variables):**
+```bash
+# Set default mode on startup
+TRANSLATION_SYNC_DISPLAY_MODE=false  # false = async (default), true = sync
+```
+
+This setting is configured through backend environment variables and requires agent restart to take effect.
+
+### Visual Comparison
+
+**Async Mode:**
+```
+Time 1: "Hello"        [original appears]
+Time 2: "Hello"        [translation appears]
+        "你好"
+```
+
+**Sync Mode:**
+```
+Time 1: [waiting...]
+Time 2: "Hello"        [both appear together]
+        "你好"
+```
+

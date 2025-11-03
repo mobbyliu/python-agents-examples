@@ -132,7 +132,7 @@ export const SessionView = ({
       localStorage.setItem('translation_source_language', sourceLanguage);
       localStorage.setItem('translation_target_language', targetLanguage);
 
-      // 发送配置到后端（防抖配置由后端环境变量控制）
+      // 发送配置到后端
       const payload = {
         source: sourceLanguage,
         target: targetLanguage,
@@ -339,7 +339,7 @@ export const SessionView = ({
                 </div>
                 
                 <div className="text-xs text-muted-foreground mt-2">
-                  💡 防抖延迟和译文防抖设置由后端环境变量控制
+                  💡 防抖延迟和显示模式设置由后端环境变量控制
                 </div>
                 
                 <div className="mt-4 flex justify-end gap-2">

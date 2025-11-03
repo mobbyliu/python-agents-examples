@@ -243,11 +243,12 @@ class OrderedDispatcher:
 class DebouncedTranslator:
     """处理带防抖的翻译请求"""
     
-    def __init__(self, debounce_ms: float = 500, enabled: bool = True):
+    def __init__(self, debounce_ms: float = 500, enabled: bool = True, sync_mode: bool = False):
         self.debounce_delay = debounce_ms / 1000
         self.pending_task: Optional[asyncio.Task] = None
         self.translate_client = None
         self.enabled = enabled
+        self.sync_mode = sync_mode  # 同步模式：true=原文译文一起发送, false=原文先发送
         
         # 初始化 Google Cloud Translate 客户端
         try:
@@ -276,6 +277,15 @@ class DebouncedTranslator:
 
         status = "enabled" if enabled else "disabled"
         logger.info(f"Debounced translation {status}")
+    
+    def update_sync_mode(self, sync_mode: bool):
+        """更新同步显示模式"""
+        if self.sync_mode == sync_mode:
+            return
+        
+        self.sync_mode = sync_mode
+        status = "enabled" if sync_mode else "disabled"
+        logger.info(f"Sync mode (original + translation together) {status}")
 
     async def translate_text(
         self, 
@@ -365,6 +375,39 @@ class DebouncedTranslator:
         # 创建新的待处理任务
         self.pending_task = asyncio.create_task(delayed_translate())
     
+    async def translate_sync(
+        self,
+        text: str,
+        source_language: str,
+        target_language: str,
+        callback
+    ):
+        """同步模式翻译：等待翻译完成后，原文和译文一起发送"""
+        # 取消之前的待处理任务
+        if self.pending_task and not self.pending_task.done():
+            self.pending_task.cancel()
+
+        async def delayed_translate():
+            try:
+                # 等待防抖延迟（如果启用）
+                if self.enabled:
+                    await asyncio.sleep(self.debounce_delay)
+                
+                # 执行翻译
+                translated = await self.translate_text(text, source_language, target_language)
+                
+                # 原文和译文一起发送
+                if translated:
+                    await callback(text, source_language, translated, is_final=False, send_original=True)
+                    
+            except asyncio.CancelledError:
+                logger.debug(f"Sync translation cancelled for: {text[:30]}...")
+            except Exception as e:
+                logger.error(f"Error in sync translation: {e}")
+        
+        # 创建新的待处理任务
+        self.pending_task = asyncio.create_task(delayed_translate())
+    
     def cancel_pending_interim(self):
         """取消待处理的interim翻译（由final调用）"""
         if self.pending_task and not self.pending_task.done():
@@ -383,7 +426,8 @@ class DeepgramTranslationAgent(Agent):
         debounce_ms: float = 500,
         debounce_enabled: bool = True,
         batch_size: int = 3,
-        batch_timeout_ms: float = 500
+        batch_timeout_ms: float = 500,
+        sync_display_mode: bool = False
     ):
         # 配置 Deepgram STT
         # 注意：Deepgram 支持的语言代码可能与 Google Translate 不同
@@ -405,7 +449,8 @@ class DeepgramTranslationAgent(Agent):
         self.source_language = source_language
         self.target_language = target_language
         self.debounce_enabled = debounce_enabled
-        self.translator = DebouncedTranslator(debounce_ms=debounce_ms, enabled=debounce_enabled)
+        self.sync_display_mode = sync_display_mode  # 同步显示模式
+        self.translator = DebouncedTranslator(debounce_ms=debounce_ms, enabled=debounce_enabled, sync_mode=sync_display_mode)
         
         # 用于跟踪上一次发送的完整文本，以计算增量
         self.last_sent_original = ""
@@ -437,13 +482,14 @@ class DeepgramTranslationAgent(Agent):
         
         logger.info(
             "DeepgramTranslationAgent initialized: %s -> %s, debounce_ms=%s, debounce_enabled=%s, "
-            "batch_size=%s, batch_timeout_ms=%s",
+            "batch_size=%s, batch_timeout_ms=%s, sync_display_mode=%s",
             source_language,
             target_language,
             debounce_ms,
             debounce_enabled,
             batch_size,
             batch_timeout_ms,
+            sync_display_mode,
         )
     
     def compute_delta(self, prev_text: str, current_text: str) -> str:
@@ -471,9 +517,10 @@ class DeepgramTranslationAgent(Agent):
     async def update_config(
         self, 
         source_language: Optional[str] = None, 
-        target_language: Optional[str] = None
+        target_language: Optional[str] = None,
+        sync_display_mode: Optional[bool] = None
     ):
-        """更新翻译配置（语言对）
+        """更新翻译配置（语言对和显示模式）
         
         注意：防抖配置（debounce_ms 和 debounce_enabled）通过后端环境变量控制：
         - TRANSLATION_DEBOUNCE_MS: 防抖延迟（毫秒）
@@ -486,6 +533,11 @@ class DeepgramTranslationAgent(Agent):
         if target_language:
             self.target_language = target_language
             logger.info(f"Target language updated to: {target_language}")
+        
+        if sync_display_mode is not None:
+            self.sync_display_mode = sync_display_mode
+            self.translator.update_sync_mode(sync_display_mode)
+            logger.info(f"Sync display mode updated to: {sync_display_mode}")
     
     async def _handle_batch_translation(self, batch: List[PendingSentence]):
         """处理一批句子的翻译"""
@@ -618,8 +670,12 @@ class DeepgramTranslationAgent(Agent):
             # 跟踪最近的 interim 文本，用于去重和优化
             last_interim_text = ""
             
-            async def translation_callback(original: str, source: str, translated: str, is_final: bool):
-                """翻译完成后的回调"""
+            async def translation_callback(original: str, source: str, translated: str, is_final: bool, send_original: bool = False):
+                """翻译完成后的回调
+                
+                Args:
+                    send_original: True时表示同步模式，原文和译文一起发送
+                """
                 await self.send_translation_to_frontend(
                     original_text=original,
                     original_language=source,
@@ -685,21 +741,32 @@ class DeepgramTranslationAgent(Agent):
                                 last_interim_text = transcript
                                 logger.debug(f"[INTERIM] Original ({self.source_language}): {transcript[:50]}...")
                                 
-                                # 先发送原文到前端（实时显示）
-                                await self.send_translation_to_frontend(
-                                    original_text=transcript,
-                                    original_language=self.source_language,
-                                    translated_text=None,
-                                    is_final=False
-                                )
-                                
-                                # 使用防抖机制翻译 interim 结果
-                                await self.translator.translate_debounced(
-                                    text=transcript,
-                                    source_language=self.source_language,
-                                    target_language=self.target_language,
-                                    callback=translation_callback
-                                )
+                                # 根据同步显示模式选择不同的处理方式
+                                if self.sync_display_mode:
+                                    # 同步模式：等译文准备好后，原文和译文一起发送
+                                    logger.debug(f"[INTERIM-SYNC] Waiting for translation before sending")
+                                    await self.translator.translate_sync(
+                                        text=transcript,
+                                        source_language=self.source_language,
+                                        target_language=self.target_language,
+                                        callback=translation_callback
+                                    )
+                                else:
+                                    # 异步模式（默认）：先发送原文到前端（实时显示）
+                                    await self.send_translation_to_frontend(
+                                        original_text=transcript,
+                                        original_language=self.source_language,
+                                        translated_text=None,
+                                        is_final=False
+                                    )
+                                    
+                                    # 使用防抖机制翻译 interim 结果
+                                    await self.translator.translate_debounced(
+                                        text=transcript,
+                                        source_language=self.source_language,
+                                        target_language=self.target_language,
+                                        callback=translation_callback
+                                    )
                 
                 yield event
         
@@ -718,6 +785,10 @@ async def entrypoint(ctx: JobContext):
     batch_size = int(os.getenv("TRANSLATION_BATCH_SIZE", "3"))
     batch_timeout_ms = float(os.getenv("TRANSLATION_BATCH_TIMEOUT_MS", "2000"))  # 2秒，匹配实际语速
     
+    # 显示模式配置（默认异步模式）
+    sync_display_mode_env = os.getenv("TRANSLATION_SYNC_DISPLAY_MODE", "false")
+    sync_display_mode = sync_display_mode_env.strip().lower() in {"1", "true", "yes", "on"}
+    
     # 创建带上下文的 agent
     agent = DeepgramTranslationAgent(
         ctx=ctx,
@@ -726,7 +797,8 @@ async def entrypoint(ctx: JobContext):
         debounce_ms=debounce_ms,
         debounce_enabled=debounce_enabled,
         batch_size=batch_size,
-        batch_timeout_ms=batch_timeout_ms
+        batch_timeout_ms=batch_timeout_ms,
+        sync_display_mode=sync_display_mode
     )
     
     session = AgentSession()
@@ -740,7 +812,8 @@ async def entrypoint(ctx: JobContext):
             config = json.loads(data.payload)
             await agent.update_config(
                 source_language=config.get('source'),
-                target_language=config.get('target')
+                target_language=config.get('target'),
+                sync_display_mode=config.get('syncDisplayMode')
             )
             return json.dumps({"status": "success", "message": "Configuration updated"})
         except Exception as e:
