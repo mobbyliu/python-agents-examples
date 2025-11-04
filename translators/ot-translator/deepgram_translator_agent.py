@@ -18,7 +18,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from livekit.agents import JobContext, WorkerOptions, cli
 from livekit.agents.voice import Agent, AgentSession
-from livekit.plugins import silero, deepgram
+from livekit.plugins import silero, deepgram, azure
 from livekit import rtc
 from typing import Optional, AsyncIterable, List, Callable, Dict
 from google.cloud import translate_v2 as translate
@@ -44,6 +44,7 @@ class PendingSentence:
     sequence: int          # 全局序号
     text: str             # 原文
     timestamp: float      # 接收时间
+    detected_language: Optional[str] = None  # 检测到的语言
 
 
 class AdaptiveBatchCollector:
@@ -67,7 +68,7 @@ class AdaptiveBatchCollector:
         self.batch_timer: Optional[asyncio.Task] = None
         self.lock = asyncio.Lock()
     
-    async def add_sentence(self, sequence: int, text: str):
+    async def add_sentence(self, sequence: int, text: str, detected_language: Optional[str] = None):
         """
         添加句子到批次
         
@@ -79,7 +80,8 @@ class AdaptiveBatchCollector:
             sentence = PendingSentence(
                 sequence=sequence,
                 text=text,
-                timestamp=time.time()
+                timestamp=time.time(),
+                detected_language=detected_language
             )
             
             # 🔑 关键判断：批次是否为空
@@ -208,32 +210,41 @@ class OrderedDispatcher:
     def __init__(self, send_callback: Callable):
         self.send_callback = send_callback
         self.next_sequence = 0  # 下一个应该发送的序号
-        self.pending_results: Dict[int, tuple] = {}  # {sequence: (original, translated)}
+        self.pending_results: Dict[int, dict] = {}  # {sequence: {original, translated, orig_lang, trans_lang}}
         self.lock = asyncio.Lock()
     
     async def add_result(
         self,
         sequence: int,
         original_text: str,
-        translated_text: Optional[str]
+        translated_text: Optional[str],
+        original_language: Optional[str] = None,
+        translation_language: Optional[str] = None
     ):
-        """添加翻译结果"""
+        """添加翻译结果（包含语言信息）"""
         async with self.lock:
-            self.pending_results[sequence] = (original_text, translated_text)
+            self.pending_results[sequence] = {
+                "original": original_text,
+                "translated": translated_text,
+                "original_language": original_language,
+                "translation_language": translation_language
+            }
             logger.debug(f"[DISPATCHER] Added seq={sequence}, next={self.next_sequence}")
             await self._flush_results()
     
     async def _flush_results(self):
         """按顺序发送所有可发送的结果"""
         while self.next_sequence in self.pending_results:
-            original, translated = self.pending_results.pop(self.next_sequence)
+            result = self.pending_results.pop(self.next_sequence)
             
             logger.info(f"[DISPATCHER] Sending seq={self.next_sequence}")
             
-            # 调用回调发送到前端
+            # 调用回调发送到前端（包含语言信息）
             await self.send_callback(
-                original_text=original,
-                translated_text=translated,
+                original_text=result["original"],
+                translated_text=result["translated"],
+                original_language=result.get("original_language"),
+                translation_language=result.get("translation_language"),
                 is_final=True
             )
             
@@ -427,17 +438,65 @@ class DeepgramTranslationAgent(Agent):
         debounce_enabled: bool = True,
         batch_size: int = 3,
         batch_timeout_ms: float = 500,
-        sync_display_mode: bool = False
+        sync_display_mode: bool = False,
+        bidirectional_mode: bool = False,
+        stt_provider: str = "deepgram"  # "deepgram" or "azure"
     ):
-        # 配置 Deepgram STT
-        # 注意：Deepgram 支持的语言代码可能与 Google Translate 不同
-        # 需要根据实际情况调整
+        # 配置 STT - 支持 Deepgram 和 Azure
+        logger.info(f"Initializing STT with provider: {stt_provider}, bidirectional_mode: {bidirectional_mode}")
+        
+        if stt_provider == "azure":
+            # Azure Speech STT 配置
+            # 从环境变量读取 Azure 凭证
+            azure_speech_key = os.getenv("AZURE_SPEECH_KEY")
+            azure_speech_region = os.getenv("AZURE_SPEECH_REGION")
+            
+            if not azure_speech_key or not azure_speech_region:
+                raise ValueError(
+                    "Azure Speech STT requires AZURE_SPEECH_KEY and AZURE_SPEECH_REGION environment variables. "
+                    "Please set them in your .env file."
+                )
+            
+            if bidirectional_mode:
+                # 双向模式：Azure 支持多语言自动检测（持续语言识别模式）
+                # 注意：语言顺序很重要，Azure 可能更倾向于识别第一个语言
+                logger.info("Azure STT: Using bidirectional mode with CONTINUOUS language detection (zh-CN, en-US)")
+                stt = azure.STT(
+                    speech_key=azure_speech_key,
+                    speech_region=azure_speech_region,
+                    language=["zh-CN", "en-US"],  # 候选语言列表
+                    language_identification_mode=azure.LanguageIdentificationMode.CONTINUOUS,  # 持续语言检测
+                )
+            else:
+                # 单向模式：使用指定的源语言
+                logger.info(f"Azure STT: Using unidirectional mode with language: {source_language}")
+                stt = azure.STT(
+                    speech_key=azure_speech_key,
+                    speech_region=azure_speech_region,
+                    language=source_language,
+                )
+        else:
+            # Deepgram STT 配置（默认）
+            if bidirectional_mode:
+                # 双向模式：使用中文模型，依赖 Google Translate 检测语言
+                logger.info("Deepgram STT: Using bidirectional mode with zh model")
+                stt = deepgram.STT(
+                    language="zh",  # 使用中文模型（能识别中英文）
+                    model="nova-2",  # Nova-2 支持中文
+                    interim_results=True,
+                )
+            else:
+                # 单向模式：使用 Nova-3（性能更好）
+                logger.info(f"Deepgram STT: Using unidirectional mode with language: {source_language}")
+                stt = deepgram.STT(
+                    language=source_language,
+                    model="nova-3",  # Nova-3 性能更好
+                    interim_results=True,
+                )
+        
         super().__init__(
-            instructions="You are a real-time translation assistant using Deepgram STT and Google Translate.",
-            stt=deepgram.STT(
-                language=source_language,  # Deepgram 的语言参数
-                interim_results=True,  # 启用 interim results
-            ),
+            instructions="You are a real-time translation assistant using STT and Google Translate.",
+            stt=stt,
             allow_interruptions=False,
             vad=silero.VAD.load(
                 min_speech_duration=0.3,  # 增加最小语音持续时间，减少 VAD 触发频率
@@ -450,7 +509,13 @@ class DeepgramTranslationAgent(Agent):
         self.target_language = target_language
         self.debounce_enabled = debounce_enabled
         self.sync_display_mode = sync_display_mode  # 同步显示模式
-        self.translator = DebouncedTranslator(debounce_ms=debounce_ms, enabled=debounce_enabled, sync_mode=sync_display_mode)
+        self.bidirectional_mode = bidirectional_mode  # 双向翻译模式
+        self.stt_provider = stt_provider  # STT 提供商
+        self.translator = DebouncedTranslator(
+            debounce_ms=debounce_ms, 
+            enabled=debounce_enabled, 
+            sync_mode=sync_display_mode
+        )
         
         # 用于跟踪上一次发送的完整文本，以计算增量
         self.last_sent_original = ""
@@ -481,8 +546,9 @@ class DeepgramTranslationAgent(Agent):
         )
         
         logger.info(
-            "DeepgramTranslationAgent initialized: %s -> %s, debounce_ms=%s, debounce_enabled=%s, "
-            "batch_size=%s, batch_timeout_ms=%s, sync_display_mode=%s",
+            "DeepgramTranslationAgent initialized: stt_provider=%s, %s -> %s, debounce_ms=%s, debounce_enabled=%s, "
+            "batch_size=%s, batch_timeout_ms=%s, sync_display_mode=%s, bidirectional_mode=%s",
+            stt_provider,
             source_language,
             target_language,
             debounce_ms,
@@ -490,6 +556,7 @@ class DeepgramTranslationAgent(Agent):
             batch_size,
             batch_timeout_ms,
             sync_display_mode,
+            bidirectional_mode,
         )
     
     def compute_delta(self, prev_text: str, current_text: str) -> str:
@@ -539,6 +606,69 @@ class DeepgramTranslationAgent(Agent):
             self.translator.update_sync_mode(sync_display_mode)
             logger.info(f"Sync display mode updated to: {sync_display_mode}")
     
+    def _determine_translation_direction(self, detected_language: Optional[str], text: Optional[str] = None) -> tuple[str, str]:
+        """
+        根据检测到的语言决定翻译方向
+        
+        Args:
+            detected_language: Azure STT 检测到的语言（如 "zh-CN", "en-US"）
+            text: 原文本（用于备用语言检测）
+            
+        Returns:
+            (source_language, target_language) 元组
+        """
+        # 检测拼音误识别：如果 Azure 说是英文，但文本看起来像拼音
+        if detected_language and detected_language.lower().startswith('en') and text:
+            # 简单的拼音模式检测
+            pinyin_patterns = ['NI ', 'ni ', 'hao', 'HAO', 'ma ', 'MA ', 'shi ', 'SHI ']
+            looks_like_pinyin = any(pattern in text for pattern in pinyin_patterns)
+            
+            if looks_like_pinyin and self.translator.translate_client:
+                logger.warning(f"⚠️ Azure detected 'en' but text looks like pinyin: '{text[:30]}...'")
+                logger.info("🔄 Using Google Translate to re-detect language")
+                # 强制使用 Google 重新检测
+                detected_language = None
+        
+        # 如果没有检测到语言，或强制重新检测，尝试使用 Google Translate 检测
+        if not detected_language and text and self.translator.translate_client:
+            try:
+                # Google Translate API 的 detect_language 方法
+                detection = self.translator.translate_client.detect_language(text)
+                if detection and 'language' in detection:
+                    detected_language = detection['language']
+                    confidence = detection.get('confidence', 0)
+                    logger.info(
+                        f"🔍 [Google Translate Fallback] Detected language: {detected_language} "
+                        f"(confidence: {confidence:.2f}) for text: '{text[:30]}...'"
+                    )
+            except Exception as e:
+                logger.debug(f"Google Translate language detection failed: {e}")
+        
+        # 如果还是没有检测到语言，使用默认配置
+        if not detected_language:
+            logger.debug("No language detected, using default translation direction")
+            return (self.source_language, self.target_language)
+        
+        # 规范化语言代码（Azure返回 "zh-CN", Google Translate 使用 "zh"）
+        detected_lang_normalized = detected_language.lower()
+        
+        # 判断是中文还是英文
+        is_chinese = detected_lang_normalized.startswith('zh')
+        is_english = detected_lang_normalized.startswith('en')
+        
+        if is_chinese:
+            # 检测到中文 → 翻译成英文
+            logger.debug(f"Detected Chinese ({detected_language}), translating zh -> en")
+            return ("zh", "en")
+        elif is_english:
+            # 检测到英文 → 翻译成中文
+            logger.debug(f"Detected English ({detected_language}), translating en -> zh")
+            return ("en", "zh")
+        else:
+            # 其他语言，使用默认配置
+            logger.warning(f"Unsupported language detected: {detected_language}, using default translation direction")
+            return (self.source_language, self.target_language)
+    
     async def _handle_batch_translation(self, batch: List[PendingSentence]):
         """处理一批句子的翻译"""
         if not batch:
@@ -553,32 +683,71 @@ class DeepgramTranslationAgent(Agent):
             f"seq={sequences}, texts={[t[:20]+'...' for t in texts]}"
         )
         
-        # 批量翻译
-        translations = await self.batch_translator.translate_batch(
-            texts=texts,
-            source_language=self.source_language,
-            target_language=self.target_language
-        )
-        
-        # 添加到顺序分发器
-        for i, sentence in enumerate(batch):
-            await self.dispatcher.add_result(
-                sequence=sentence.sequence,
-                original_text=sentence.text,
-                translated_text=translations[i] if i < len(translations) else None
+        # 在双向模式下，根据检测到的语言决定翻译方向
+        if self.bidirectional_mode:
+            # 逐个处理每个句子，因为它们可能有不同的语言
+            for sentence in batch:
+                # 确定翻译方向（可能使用 Google Translate 作为备用检测）
+                src_lang, tgt_lang = self._determine_translation_direction(
+                    sentence.detected_language, 
+                    sentence.text  # 传递文本用于备用语言检测
+                )
+                
+                # 显示翻译方向和原始语言检测结果
+                detection_source = "Azure" if sentence.detected_language else "Google Fallback"
+                logger.info(
+                    f"[BIDIRECTIONAL] seq={sentence.sequence}, "
+                    f"detected={sentence.detected_language or 'auto'} ({detection_source}), "
+                    f"direction: {src_lang} -> {tgt_lang}, "
+                    f"text: '{sentence.text[:30]}...'"
+                )
+                
+                translation_result = await self.batch_translator.translate_batch(
+                    texts=[sentence.text],
+                    source_language=src_lang,
+                    target_language=tgt_lang
+                )
+                
+                # 添加到顺序分发器（包含语言信息）
+                await self.dispatcher.add_result(
+                    sequence=sentence.sequence,
+                    original_text=sentence.text,
+                    translated_text=translation_result[0] if translation_result else None,
+                    original_language=src_lang,  # 实际检测到的源语言
+                    translation_language=tgt_lang  # 实际的目标语言
+                )
+        else:
+            # 单向模式：批量翻译所有句子
+            translations = await self.batch_translator.translate_batch(
+                texts=texts,
+                source_language=self.source_language,
+                target_language=self.target_language
             )
+            
+            # 添加到顺序分发器
+            for i, sentence in enumerate(batch):
+                await self.dispatcher.add_result(
+                    sequence=sentence.sequence,
+                    original_text=sentence.text,
+                    translated_text=translations[i] if i < len(translations) else None,
+                    original_language=self.source_language,
+                    translation_language=self.target_language
+                )
     
     async def _send_to_frontend_final(
         self,
         original_text: str,
         translated_text: Optional[str],
-        is_final: bool
+        original_language: Optional[str] = None,
+        translation_language: Optional[str] = None,
+        is_final: bool = True
     ):
         """发送final结果到前端（内部方法）"""
         await self.send_translation_to_frontend(
             original_text=original_text,
-            original_language=self.source_language,
+            original_language=original_language or self.source_language,
             translated_text=translated_text,
+            translation_language=translation_language or self.target_language,
             is_final=is_final
         )
     
@@ -587,11 +756,19 @@ class DeepgramTranslationAgent(Agent):
         original_text: str, 
         original_language: str, 
         translated_text: Optional[str], 
-        is_final: bool
+        translation_language: Optional[str] = None,
+        is_final: bool = True
     ):
         """
         通过 RPC 发送翻译数据到前端
         同时发送 full_text 和 delta，支持增量渲染和纠错
+        
+        Args:
+            original_text: 原文
+            original_language: 原文语言
+            translated_text: 译文
+            translation_language: 译文语言（双向模式下动态）
+            is_final: 是否是最终结果
         """
         if not self.ctx or not self.ctx.room:
             logger.debug("No room context available for RPC")
@@ -616,6 +793,9 @@ class DeepgramTranslationAgent(Agent):
                 translation_delta = self.compute_delta(self.last_sent_translation, translated_text)
             
             # 准备翻译数据（包含 full_text 和 delta）
+            # 在双向模式下，translation_language 会动态变化
+            trans_lang = translation_language or self.target_language
+            
             translation_data = {
                 "type": "final" if is_final else "interim",
                 "original": {
@@ -626,7 +806,7 @@ class DeepgramTranslationAgent(Agent):
                 "translation": {
                     "full_text": translated_text,
                     "delta": translation_delta,
-                    "language": self.target_language
+                    "language": trans_lang
                 } if translated_text else None,
                 "timestamp": time.time()
             }
@@ -684,7 +864,7 @@ class DeepgramTranslationAgent(Agent):
                 )
             
             async for event in parent_stream:
-                # 处理 Deepgram 的转录事件
+                # 处理 STT 的转录事件（支持 Deepgram 和 Azure）
                 if hasattr(event, 'alternatives') and event.alternatives:
                     for alt in event.alternatives:
                         if hasattr(alt, 'text') and alt.text:
@@ -692,6 +872,22 @@ class DeepgramTranslationAgent(Agent):
                             
                             if not transcript:
                                 continue
+                            
+                            # 提取检测到的语言（Azure STT 持续语言检测模式）
+                            detected_language = None
+                            if self.stt_provider == "azure" and self.bidirectional_mode:
+                                # 尝试从不同位置获取语言信息
+                                # Azure 在持续语言检测模式下会在每个结果中返回语言
+                                if hasattr(event, 'language') and event.language:
+                                    detected_language = event.language
+                                    logger.debug(f"🔍 [Azure] Detected language: {detected_language}")
+                                elif hasattr(alt, 'language') and alt.language:
+                                    detected_language = alt.language
+                                    logger.debug(f"🔍 [Azure] Detected language from alt: {detected_language}")
+                                
+                                # 如果仍然没有检测到语言，记录警告
+                                if not detected_language:
+                                    logger.debug(f"⚠️ [Azure] No language detected for: '{transcript[:30]}...'")
                             
                             # 判断是 interim 还是 final
                             is_final = False
@@ -712,8 +908,10 @@ class DeepgramTranslationAgent(Agent):
                                 sequence = self.sentence_sequence
                                 self.sentence_sequence += 1
                                 
+                                # 记录包含语言信息的日志
+                                lang_info = f", lang={detected_language}" if detected_language else ""
                                 logger.info(
-                                    f"[FINAL] seq={sequence}, "
+                                    f"[FINAL] seq={sequence}{lang_info}, "
                                     f"text='{transcript[:50]}...'"
                                 )
                                 
@@ -724,9 +922,9 @@ class DeepgramTranslationAgent(Agent):
                                         f"[FINAL] Cancelled interim for '{transcript[:30]}...'"
                                     )
                                 
-                                # ✅ 优化2：加入自适应批量收集器（不阻塞）
+                                # ✅ 优化2：加入自适应批量收集器（不阻塞），传递检测到的语言
                                 asyncio.create_task(
-                                    self.batch_collector.add_sentence(sequence, transcript)
+                                    self.batch_collector.add_sentence(sequence, transcript, detected_language)
                                 )
                                 
                                 # 清除 interim 缓存
@@ -739,7 +937,19 @@ class DeepgramTranslationAgent(Agent):
                                     continue
                                 
                                 last_interim_text = transcript
-                                logger.debug(f"[INTERIM] Original ({self.source_language}): {transcript[:50]}...")
+                                
+                                # 记录 interim 结果（包含语言信息）
+                                lang_info = f", lang={detected_language}" if detected_language else ""
+                                logger.debug(f"[INTERIM]{lang_info}: {transcript[:50]}...")
+                                
+                                # 在双向模式下，确定翻译方向
+                                src_lang = self.source_language
+                                tgt_lang = self.target_language
+                                if self.bidirectional_mode:
+                                    src_lang, tgt_lang = self._determine_translation_direction(
+                                        detected_language, 
+                                        transcript
+                                    )
                                 
                                 # 根据同步显示模式选择不同的处理方式
                                 if self.sync_display_mode:
@@ -747,24 +957,25 @@ class DeepgramTranslationAgent(Agent):
                                     logger.debug(f"[INTERIM-SYNC] Waiting for translation before sending")
                                     await self.translator.translate_sync(
                                         text=transcript,
-                                        source_language=self.source_language,
-                                        target_language=self.target_language,
+                                        source_language=src_lang,
+                                        target_language=tgt_lang,
                                         callback=translation_callback
                                     )
                                 else:
                                     # 异步模式（默认）：先发送原文到前端（实时显示）
                                     await self.send_translation_to_frontend(
                                         original_text=transcript,
-                                        original_language=self.source_language,
+                                        original_language=src_lang,
                                         translated_text=None,
+                                        translation_language=tgt_lang,
                                         is_final=False
                                     )
                                     
                                     # 使用防抖机制翻译 interim 结果
                                     await self.translator.translate_debounced(
                                         text=transcript,
-                                        source_language=self.source_language,
-                                        target_language=self.target_language,
+                                        source_language=src_lang,
+                                        target_language=tgt_lang,
                                         callback=translation_callback
                                     )
                 
@@ -789,6 +1000,16 @@ async def entrypoint(ctx: JobContext):
     sync_display_mode_env = os.getenv("TRANSLATION_SYNC_DISPLAY_MODE", "false")
     sync_display_mode = sync_display_mode_env.strip().lower() in {"1", "true", "yes", "on"}
     
+    # 双向翻译模式配置（默认关闭）
+    bidirectional_mode_env = os.getenv("TRANSLATION_BIDIRECTIONAL_MODE", "false")
+    bidirectional_mode = bidirectional_mode_env.strip().lower() in {"1", "true", "yes", "on"}
+    
+    # STT 提供商配置（默认 deepgram）
+    stt_provider = os.getenv("STT_PROVIDER", "deepgram").strip().lower()
+    if stt_provider not in ["deepgram", "azure"]:
+        logger.warning(f"Invalid STT_PROVIDER '{stt_provider}', falling back to 'deepgram'")
+        stt_provider = "deepgram"
+    
     # 创建带上下文的 agent
     agent = DeepgramTranslationAgent(
         ctx=ctx,
@@ -798,7 +1019,9 @@ async def entrypoint(ctx: JobContext):
         debounce_enabled=debounce_enabled,
         batch_size=batch_size,
         batch_timeout_ms=batch_timeout_ms,
-        sync_display_mode=sync_display_mode
+        sync_display_mode=sync_display_mode,
+        bidirectional_mode=bidirectional_mode,
+        stt_provider=stt_provider
     )
     
     session = AgentSession()

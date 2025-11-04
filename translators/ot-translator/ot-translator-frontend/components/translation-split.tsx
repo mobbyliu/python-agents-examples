@@ -36,6 +36,7 @@ export function TranslationSplit({
   const [accumulatedTranslation, setAccumulatedTranslation] = useState<string>('');
   const [currentTranslation, setCurrentTranslation] = useState<string>('');
   const [prevTranslation, setPrevTranslation] = useState<string>('');
+  const [translationLanguage, setTranslationLanguage] = useState<string>(''); // 动态译文语言
 
   const currentOriginalRef = useRef(currentOriginal);
   const currentTranslationRef = useRef(currentTranslation);
@@ -80,6 +81,8 @@ export function TranslationSplit({
         setPrevTranslation(currentTranslationRef.current);
         setCurrentTranslation(newTranslation);
         currentTranslationRef.current = newTranslation;
+        // 更新译文语言（支持双向翻译）
+        setTranslationLanguage(payload.translation.language);
       } else if (payload.type === 'final') {
         setPrevTranslation(currentTranslationRef.current);
         setCurrentTranslation(newTranslation);
@@ -89,6 +92,9 @@ export function TranslationSplit({
           const separator = prev ? '\n\n' : '';
           return prev + separator + newTranslation;
         });
+        
+        // 更新译文语言（支持双向翻译）
+        setTranslationLanguage(payload.translation.language);
       }
     }
   }, []);
@@ -239,8 +245,11 @@ export function TranslationSplit({
       {/* 下半部分：译文区域 */}
       <div className="flex-1 flex flex-col min-h-0">
         <div className="bg-muted px-4 py-2 border-b border-border flex-shrink-0 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-foreground">
-            译文 ({getLanguageLabel(targetLanguage)})
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+            译文
+            {translationLanguage && (
+              <span className="text-xs text-muted-foreground">({getLanguageLabel(translationLanguage)})</span>
+            )}
           </h3>
         </div>
         <div

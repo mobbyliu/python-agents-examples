@@ -235,11 +235,13 @@ export function TranslationAlternate({
 
   // 判断是否需要显示原文
   const shouldShowOriginal = (item: ConversationItem) => {
+    // 有翻译就显示原文，或者原文语言不是目标语言
     return item.translation || item.original.language !== targetLanguage;
   };
 
-  // 判断是否显示为目标语言原生输入
+  // 判断是否显示为目标语言原生输入（无需翻译）
   const isTargetNativeInput = (item: ConversationItem) => {
+    // 没有翻译，说明原文就是目标语言或检测到不需要翻译
     return !item.translation && item.original.language === targetLanguage;
   };
 
@@ -294,7 +296,8 @@ export function TranslationAlternate({
         {isInterim && (
           <div>
             {/* 需要翻译的内容：原文+译文在一个卡片中（实时预览） */}
-            {interimOriginal && interimOriginalLang !== targetLanguage && (
+            {/* 双向模式：只要有 interimOriginal 就可能需要翻译，由后端决定 */}
+            {interimOriginal && interimOriginalLang && interimOriginalLang !== targetLanguage && (
               <div className="bg-card p-2 rounded-lg border-2 border-dashed border-primary/50 shadow-sm">
                 {/* 原文部分 */}
                 <div className="pb-1.5">

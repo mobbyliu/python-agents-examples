@@ -1,6 +1,8 @@
-# Deepgram + Google Translate 实时翻译系统
+# Deepgram/Azure + Google Translate 实时翻译系统
 
-基于 Deepgram STT 和 Google Cloud Translate API 的实时流式翻译系统，支持多语言配置和智能防抖优化。
+基于 Deepgram STT 或 Azure Speech STT 和 Google Cloud Translate API 的实时流式翻译系统，支持多语言配置和智能防抖优化。
+
+> 💡 **STT 提供商选择**：系统支持 Deepgram 和 Azure Speech 两种 STT 提供商，可通过环境变量 `STT_PROVIDER` 切换。
 
 ## 功能特点
 
@@ -21,7 +23,7 @@
 ```
 用户语音 
   ↓
-Deepgram STT (interim + final)
+Deepgram STT / Azure Speech STT (interim + final)
   ↓
 防抖队列 (仅 interim, 可配置延迟)
   ↓
@@ -31,6 +33,16 @@ RPC 通信 (WebRTC DataChannel)
   ↓
 前端显示 (打字机效果)
 ```
+
+### STT 提供商对比
+
+| 特性 | Deepgram | Azure Speech |
+|------|----------|-------------|
+| **中英文混合识别** | Nova-2 支持（需固定语言模型） | 原生支持流式多语言检测 |
+| **中文识别准确率** | 良好 | 优秀（微软在中文市场深耕） |
+| **双向翻译模式** | 依赖 Google Translate 检测 | Azure + Google Translate 双重检测 |
+| **配置复杂度** | 简单 | 中等 |
+| **最佳使用场景** | 英文为主的内容 | 中文为主或中英混合内容 |
 
 ## 前置条件
 
@@ -65,11 +77,28 @@ RPC 通信 (WebRTC DataChannel)
 4. 选择 **JSON** 格式
 5. 保存下载的 JSON 文件到安全位置（例如：`~/google-cloud-credentials.json`）
 
-### 2. Deepgram API Key
+### 2. STT 提供商配置
+
+根据选择的 STT 提供商，配置对应的 API Key：
+
+#### 选项 A: Deepgram API Key（默认）
 
 1. 访问 [Deepgram Console](https://console.deepgram.com/)
 2. 创建账户或登录
 3. 获取 API Key
+
+#### 选项 B: Azure Speech Service
+
+1. 访问 [Azure Portal](https://portal.azure.com/)
+2. 创建 "Speech" 资源（Cognitive Services）
+3. 记录以下信息：
+   - **Subscription Key** (AZURE_SPEECH_KEY)
+   - **Region** (例如：eastus, westus2)
+
+**推荐使用 Azure Speech 的场景：**
+- 中文语音识别为主
+- 需要更高的中文识别准确率
+- 使用双向翻译模式（中英文自动切换）
 
 ## 安装和配置
 
@@ -81,7 +110,7 @@ pip install -r requirements.txt
 
 这会安装：
 - `google-cloud-translate>=3.0.0`
-- `livekit-agents[deepgram]`
+- `livekit-agents[deepgram,azure]` - 同时支持 Deepgram 和 Azure Speech
 - 其他必要依赖
 
 ### 2. 配置环境变量
@@ -94,17 +123,46 @@ LIVEKIT_URL=your_livekit_url
 LIVEKIT_API_KEY=your_api_key
 LIVEKIT_API_SECRET=your_api_secret
 
-# Deepgram Configuration
+# STT Provider Selection (可选: "deepgram" 或 "azure", 默认 "deepgram")
+STT_PROVIDER=deepgram
+
+# Deepgram Configuration (使用 Deepgram 时需要)
 DEEPGRAM_API_KEY=your_deepgram_api_key
+
+# Azure Speech Configuration (使用 Azure 时需要)
+# AZURE_SPEECH_KEY=your_azure_speech_key
+# AZURE_SPEECH_REGION=eastus
 
 # Google Cloud Translation Configuration
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/your/service-account-key.json
 GOOGLE_CLOUD_PROJECT=your_project_id
 
-# Optional: Translation Defaults
+# Optional: Translation Configuration
 TRANSLATION_SOURCE_LANGUAGE=en
 TRANSLATION_TARGET_LANGUAGE=zh
 TRANSLATION_DEBOUNCE_MS=500
+TRANSLATION_BIDIRECTIONAL_MODE=false  # 设置为 true 启用双向翻译（中英文自动切换）
+```
+
+#### 配置说明
+
+**STT_PROVIDER** - 选择 STT 提供商：
+- `deepgram`（默认）：适合英文为主的内容
+- `azure`：适合中文为主或中英混合的内容
+
+**使用 Deepgram 时：**
+- 需要配置 `DEEPGRAM_API_KEY`
+- 双向模式使用 Nova-2 模型（支持中文）
+- 单向模式使用 Nova-3 模型（性能更好）
+
+**使用 Azure Speech 时：**
+- 需要配置 `AZURE_SPEECH_KEY` 和 `AZURE_SPEECH_REGION`
+- 双向模式支持原生流式多语言检测（zh-CN, en-US）
+- 中文识别准确率更高
+
+**TRANSLATION_BIDIRECTIONAL_MODE**：
+- `false`（默认）：单向翻译（源语言 → 目标语言）
+- `true`：双向翻译（自动检测中文/英文，翻译为另一种语言）
 ```
 
 **重要**：确保 `GOOGLE_APPLICATION_CREDENTIALS` 指向你下载的 Service Account JSON 文件的绝对路径。
@@ -295,6 +353,33 @@ async def handle_final_text(text):
 - 检查网络连接
 - 确认 Google Cloud 项目的区域设置
 
+### 5. Azure Speech STT 配置错误
+
+**错误信息**：`Failed to initialize Azure Speech STT`
+
+**解决方案**：
+- 检查 `AZURE_SPEECH_KEY` 是否正确
+- 确认 `AZURE_SPEECH_REGION` 与 Azure 资源区域一致（如：eastus, westus2）
+- 验证 Azure Speech 服务已创建且处于活动状态
+- 检查 `STT_PROVIDER` 环境变量是否设置为 `azure`
+- 确保已安装 Azure 插件：`pip install livekit-agents[azure]`
+
+### 6. Azure 双向翻译语言检测问题
+
+**症状**：使用 Azure STT 时，语言检测不准确或翻译方向错误
+
+**解决方案**：
+- 确认 `TRANSLATION_BIDIRECTIONAL_MODE=true` 已设置
+- Azure STT 会返回检测到的语言，但最终翻译方向由 Google Translate 的语言检测决定
+- 检查日志中的语言检测信息：
+  ```
+  🔍 [Azure STT] Detected language: zh-CN for text: '...'
+  🔍 [LANGUAGE DETECTION] Detected source language: 'zh'
+  ✅ [TRANSLATION DIRECTION] zh -> en
+  ```
+- 如果 Azure 检测准确但翻译方向仍错误，可能是 Google Translate 检测结果覆盖了 Azure 的结果
+- 双重语言检测机制：Azure STT 提供初步检测，Google Translate 提供最终确认
+
 ## API 调用成本估算
 
 ### Google Cloud Translate Pricing
@@ -302,10 +387,18 @@ async def handle_final_text(text):
 - 文本翻译：$20 / 百万字符
 - 每月免费额度：50 万字符
 
-### Deepgram Pricing
+### STT 提供商定价
+
+#### Deepgram Pricing
 
 - 实时 STT：$0.0043 / 分钟（Nova-2 模型）
+- 实时 STT：$0.0059 / 分钟（Nova-3 模型）
 - 每月免费额度：200 美元
+
+#### Azure Speech Pricing
+
+- 实时 STT：$1.00 / 小时（标准版）
+- 每月免费额度：5 小时音频转录 + 100 万字符翻译
 
 ### 示例计算
 

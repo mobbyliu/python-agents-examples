@@ -7,10 +7,24 @@ A real-time translation system with **two implementation options**:
 ### 1. Gladia Version (`agent.py`) - All-in-One Solution
 Uses Gladia STT with built-in translation capabilities. Best for quick prototyping.
 
-### 2. Deepgram + Google Translate Version (`deepgram_translator_agent.py`) - Flexible Production Setup
-Uses Deepgram STT for speech recognition and Google Cloud Translate API for translation. Best for production with configurable languages and cost optimization.
+### 2. Deepgram/Azure + Google Translate Version (`deepgram_translator_agent.py`) - Flexible Production Setup
+Uses Deepgram STT or Azure Speech STT for speech recognition and Google Cloud Translate API for translation. Supports configurable STT providers and bidirectional translation. Best for production with configurable languages and cost optimization.
 
 **👉 For detailed setup and usage of the Deepgram version, see [DEEPGRAM_README.md](./DEEPGRAM_README.md)**
+
+#### STT Provider Options
+
+The system supports two STT providers that can be switched via environment variable:
+
+| Provider | Best For | Multi-language Detection | Chinese Accuracy | Configuration |
+|----------|----------|-------------------------|-----------------|---------------|
+| **Deepgram** (default) | General use, English-heavy content | Limited (Nova-2) | Good | `STT_PROVIDER=deepgram` |
+| **Azure Speech** | Chinese-heavy content, bidirectional translation | Native streaming support | Excellent | `STT_PROVIDER=azure` |
+
+**Environment Variable:**
+```bash
+STT_PROVIDER=deepgram  # or "azure"
+```
 
 ---
 
@@ -67,18 +81,21 @@ pnpm dev
 
 ---
 
-## Comparison: Gladia vs Deepgram + Google Translate
+## Comparison: Gladia vs Deepgram/Azure + Google Translate
 
-| Feature | Gladia Version | Deepgram + Google Translate |
-|---------|---------------|----------------------------|
-| **STT Provider** | Gladia | Deepgram |
-| **Translation** | Gladia built-in | Google Cloud Translate |
-| **Language Config** | Code only | UI + Code (dynamic) |
-| **Debounce Optimization** | No | Yes (configurable) |
-| **Language Support** | Limited | 100+ languages |
-| **Cost Structure** | All-in-one pricing | Separate STT + Translation |
-| **Setup Complexity** | Simple | Moderate (requires Google Cloud) |
-| **Best For** | Quick prototyping | Production, flexible configs |
+| Feature | Gladia Version | Deepgram + Google Translate | Azure Speech + Google Translate |
+|---------|---------------|----------------------------|--------------------------------|
+| **STT Provider** | Gladia | Deepgram (Nova-2/Nova-3) | Azure Speech |
+| **Translation** | Gladia built-in | Google Cloud Translate | Google Cloud Translate |
+| **Multi-language Detection** | Code switching | Limited (bidirectional mode) | Native streaming support |
+| **Chinese Accuracy** | Good | Good (Nova-2) | Excellent |
+| **Language Config** | Code only | UI + Code (dynamic) | UI + Code (dynamic) |
+| **Debounce Optimization** | No | Yes (configurable) | Yes (configurable) |
+| **Bidirectional Translation** | No | Yes (via Google Translate detection) | Yes (Azure + Google Translate) |
+| **Language Support** | Limited | 100+ languages | 100+ languages |
+| **Cost Structure** | All-in-one pricing | Separate STT + Translation | Separate STT + Translation |
+| **Setup Complexity** | Simple | Moderate (requires Google Cloud) | Moderate (requires Azure + Google Cloud) |
+| **Best For** | Quick prototyping | Production, English-heavy | Production, Chinese-heavy |
 
 ---
 
