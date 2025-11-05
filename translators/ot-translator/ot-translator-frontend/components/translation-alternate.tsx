@@ -254,7 +254,7 @@ export function TranslationAlternate({
         {/* 累积的对话记录 */}
         {conversation.length === 0 && !isInterim && (
           <div className="text-center text-muted-foreground py-8">
-            等待输入...
+            Waiting for input...
           </div>
         )}
 
@@ -317,7 +317,7 @@ export function TranslationAlternate({
                     </p>
                   ) : (
                     <p className="text-base text-muted-foreground/50">
-                      翻译中...
+                      Translating...
                     </p>
                   )}
                 </div>

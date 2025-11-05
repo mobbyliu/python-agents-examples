@@ -215,7 +215,7 @@ export function TranslationSplit({
       <div className="flex-1 flex flex-col border-b-2 border-border min-h-0">
         <div className="bg-muted px-4 py-2 border-b border-border flex-shrink-0">
           <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-            原文
+            Original
             {currentLanguage && (
               <span className="text-xs text-muted-foreground">({getLanguageLabel(currentLanguage)})</span>
             )}
@@ -227,7 +227,7 @@ export function TranslationSplit({
         >
           {!fullOriginalText && (
             <div className="text-center text-muted-foreground py-8">
-              等待输入...
+              Waiting for input...
             </div>
           )}
           
@@ -246,7 +246,7 @@ export function TranslationSplit({
       <div className="flex-1 flex flex-col min-h-0">
         <div className="bg-muted px-4 py-2 border-b border-border flex-shrink-0 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-            译文
+            Translation
             {translationLanguage && (
               <span className="text-xs text-muted-foreground">({getLanguageLabel(translationLanguage)})</span>
             )}
@@ -258,7 +258,7 @@ export function TranslationSplit({
         >
           {!fullTranslationText && (
             <div className="text-center text-muted-foreground py-8">
-              等待翻译...
+              Waiting for translation...
             </div>
           )}
           

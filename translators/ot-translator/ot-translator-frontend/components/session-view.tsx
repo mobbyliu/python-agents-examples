@@ -20,18 +20,18 @@ import {
 import { AnimatePresence, motion } from 'motion/react';
 import React, { useEffect, useState } from 'react';
 
-// 支持的语言列表
+// Supported languages list
 const SUPPORTED_LANGUAGES = [
-  { code: 'en', name: '英语 (English)' },
-  { code: 'zh', name: '中文 (Chinese)' },
-  { code: 'fr', name: '法语 (French)' },
-  { code: 'es', name: '西班牙语 (Spanish)' },
-  { code: 'de', name: '德语 (German)' },
-  { code: 'ja', name: '日语 (Japanese)' },
-  { code: 'ko', name: '韩语 (Korean)' },
-  { code: 'pt', name: '葡萄牙语 (Portuguese)' },
-  { code: 'ru', name: '俄语 (Russian)' },
-  { code: 'ar', name: '阿拉伯语 (Arabic)' },
+  { code: 'en', name: 'English' },
+  { code: 'zh', name: 'Chinese (中文)' },
+  { code: 'fr', name: 'French (Français)' },
+  { code: 'es', name: 'Spanish (Español)' },
+  { code: 'de', name: 'German (Deutsch)' },
+  { code: 'ja', name: 'Japanese (日本語)' },
+  { code: 'ko', name: 'Korean (한국어)' },
+  { code: 'pt', name: 'Portuguese (Português)' },
+  { code: 'ru', name: 'Russian (Русский)' },
+  { code: 'ar', name: 'Arabic (العربية)' },
 ];
 
 // Display Mode Types
@@ -47,14 +47,14 @@ interface TabOption {
 const tabOptions: TabOption[] = [
   {
     id: 'alternate',
-    label: '交替显示',
-    description: '原文与译文交替显示',
+    label: 'Alternate',
+    description: 'Original and translation alternate',
     icon: '📝',
   },
   {
     id: 'split',
-    label: '分屏显示',
-    description: '上下分屏对照',
+    label: 'Split Screen',
+    description: 'Side-by-side comparison',
     icon: '⬍',
   },
 ];
@@ -107,15 +107,15 @@ export const SessionView = ({
     await send(message);
   }
 
-  // 获取语言标签
+  // Get language label
   const getLanguageLabel = (lang: string): string => {
     const langObj = SUPPORTED_LANGUAGES.find(l => l.code === lang);
-    if (langObj) return langObj.name.split(' ')[0]; // 返回中文名称
+    if (langObj) return langObj.name;
     
     const labels: Record<string, string> = {
-      fr: '法语',
-      en: '英语',
-      zh: '中文',
+      fr: 'French',
+      en: 'English',
+      zh: 'Chinese',
     };
     return labels[lang] || lang.toUpperCase();
   };
@@ -240,7 +240,7 @@ export const SessionView = ({
           {/* Left Tab Navigation */}
           <div className="hidden lg:flex flex-col gap-2 p-3 bg-muted/50 border-r border-border w-40 flex-shrink-0">
             <div className="text-xs font-semibold text-muted-foreground px-2 mb-1">
-              显示模式
+              Display Mode
             </div>
             
             {tabOptions.map((option) => (
@@ -277,7 +277,7 @@ export const SessionView = ({
             {/* Configuration Header */}
             <div className="bg-muted/50 border-b border-border px-4 py-2 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-3">
-                <span className="text-sm text-muted-foreground">翻译配置:</span>
+                <span className="text-sm text-muted-foreground">Translation:</span>
                 <span className="text-sm font-medium">
                   {getLanguageLabel(sourceLanguage)} → {getLanguageLabel(targetLanguage)}
                 </span>
@@ -285,9 +285,9 @@ export const SessionView = ({
               <button
                 onClick={() => setShowConfig(!showConfig)}
                 className="px-3 py-1 text-sm text-muted-foreground hover:text-foreground hover:bg-background rounded transition-colors flex items-center gap-1"
-                title="翻译配置"
+                title="Translation Configuration"
               >
-                ⚙️ 配置
+                ⚙️ Config
               </button>
             </div>
 
@@ -295,7 +295,7 @@ export const SessionView = ({
             {showConfig && (
               <div className="bg-muted border-b border-border p-4 flex-shrink-0">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold">翻译配置</h3>
+                  <h3 className="text-sm font-semibold">Translation Configuration</h3>
                   <button
                     onClick={() => setShowConfig(false)}
                     className="text-muted-foreground hover:text-foreground text-sm"
@@ -305,9 +305,9 @@ export const SessionView = ({
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* 源语言选择 */}
+                  {/* Source Language */}
                   <div>
-                    <label className="block text-xs text-muted-foreground mb-1">源语言</label>
+                    <label className="block text-xs text-muted-foreground mb-1">Source Language</label>
                     <select
                       value={sourceLanguage}
                       onChange={(e) => setSourceLanguage(e.target.value)}
@@ -321,9 +321,9 @@ export const SessionView = ({
                     </select>
                   </div>
                   
-                  {/* 目标语言选择 */}
+                  {/* Target Language */}
                   <div>
-                    <label className="block text-xs text-muted-foreground mb-1">目标语言</label>
+                    <label className="block text-xs text-muted-foreground mb-1">Target Language</label>
                     <select
                       value={targetLanguage}
                       onChange={(e) => setTargetLanguage(e.target.value)}
@@ -339,7 +339,7 @@ export const SessionView = ({
                 </div>
                 
                 <div className="text-xs text-muted-foreground mt-2">
-                  💡 防抖延迟和显示模式设置由后端环境变量控制
+                  💡 Debounce delay and display mode are controlled by backend environment variables
                 </div>
                 
                 <div className="mt-4 flex justify-end gap-2">
@@ -347,13 +347,13 @@ export const SessionView = ({
                     onClick={() => setShowConfig(false)}
                     className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
                   >
-                    取消
+                    Cancel
                   </button>
                   <button
                     onClick={updateTranslationConfig}
                     className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded hover:opacity-90"
                   >
-                    保存配置
+                    Save Configuration
                   </button>
                 </div>
               </div>

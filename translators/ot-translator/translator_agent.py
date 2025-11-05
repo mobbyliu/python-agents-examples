@@ -1,12 +1,12 @@
 """
 ---
-title: Deepgram + Google Translate Real-time Translator
+title: Real-time STT + Google Translate Translator
 category: translation
-tags: [translation, deepgram-stt, google-translate, streaming, debounce]
+tags: [translation, stt, google-translate, streaming, debounce, deepgram, azure]
 difficulty: advanced
-description: Real-time streaming translation system using Deepgram STT and Google Cloud Translate API
+description: Real-time streaming translation system using STT (Deepgram/Azure) and Google Cloud Translate API
 demonstrates:
-  - Deepgram STT integration for multi-language speech recognition
+  - Multi-provider STT integration (Deepgram/Azure) for multi-language speech recognition
   - Google Cloud Translate API for text translation
   - Debounced interim translation to optimize API calls
   - Configurable source and target languages via RPC
@@ -34,7 +34,7 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 
 load_dotenv(dotenv_path=Path(__file__).parent.parent.parent / '.env')
 
-logger = logging.getLogger("deepgram-translator")
+logger = logging.getLogger("translator")
 logger.setLevel(logging.INFO)
 
 
@@ -167,10 +167,12 @@ class BatchTranslator:
             
             # ✅ 批量调用 Google Translate API
             # API支持传入列表
+            # format_='text' 避免 HTML 实体编码 (&#39; -> ')
             results = self.translate_client.translate(
                 texts,
                 target_language=target_language,
-                source_language=source_language
+                source_language=source_language,
+                format_='text'  # 返回纯文本，不使用 HTML 实体
             )
             
             elapsed_ms = (time.time() - start_time) * 1000
@@ -318,10 +320,12 @@ class DebouncedTranslator:
             start_time = time.time()
             
             # 调用 Google Translate API
+            # format_='text' 避免 HTML 实体编码 (&#39; -> ')
             result = self.translate_client.translate(
                 text,
                 target_language=target_language,
-                source_language=source_language
+                source_language=source_language,
+                format_='text'  # 返回纯文本，不使用 HTML 实体
             )
             
             # 计算耗时
@@ -428,7 +432,7 @@ class DebouncedTranslator:
         return False
 
 
-class DeepgramTranslationAgent(Agent):
+class TranslationAgent(Agent):
     def __init__(
         self, 
         ctx: Optional[JobContext] = None,
@@ -457,45 +461,57 @@ class DeepgramTranslationAgent(Agent):
                     "Please set them in your .env file."
                 )
             
+            # 从环境变量读取 Azure segmentation 配置
+            # segmentation_silence_timeout_ms: 静音多少毫秒后结束当前句子
+            azure_segmentation_silence_ms = int(os.getenv("AZURE_SEGMENTATION_SILENCE_MS", "1500"))
+            
             if bidirectional_mode:
                 # 双向模式：Azure 支持多语言自动检测（持续语言识别模式）
                 # 注意：语言顺序很重要，Azure 可能更倾向于识别第一个语言
-                logger.info("Azure STT: Using bidirectional mode with CONTINUOUS language detection (zh-CN, en-US)")
+                logger.info(f"Azure STT: Using bidirectional mode with CONTINUOUS language detection (zh-CN, en-US), segmentation_silence={azure_segmentation_silence_ms}ms")
                 stt = azure.STT(
                     speech_key=azure_speech_key,
                     speech_region=azure_speech_region,
                     language=["zh-CN", "en-US"],  # 候选语言列表
                     language_identification_mode=azure.LanguageIdentificationMode.CONTINUOUS,  # 持续语言检测
+                    segmentation_silence_timeout_ms=azure_segmentation_silence_ms,  # 控制句子长度
                 )
             else:
                 # 单向模式：使用指定的源语言
-                logger.info(f"Azure STT: Using unidirectional mode with language: {source_language}")
+                logger.info(f"Azure STT: Using unidirectional mode with language: {source_language}, segmentation_silence={azure_segmentation_silence_ms}ms")
                 stt = azure.STT(
                     speech_key=azure_speech_key,
                     speech_region=azure_speech_region,
                     language=source_language,
+                    segmentation_silence_timeout_ms=azure_segmentation_silence_ms,  # 控制句子长度
                 )
         else:
             # Deepgram STT 配置（默认）
+            # 从环境变量读取 Deepgram endpointing 配置
+            # endpointing_ms: 静音多少毫秒后结束当前句子（注意：默认25ms非常小！）
+            deepgram_endpointing_ms = int(os.getenv("DEEPGRAM_ENDPOINTING_MS", "1000"))
+            
             if bidirectional_mode:
                 # 双向模式：使用中文模型，依赖 Google Translate 检测语言
-                logger.info("Deepgram STT: Using bidirectional mode with zh model")
+                logger.info(f"Deepgram STT: Using bidirectional mode with zh model, endpointing={deepgram_endpointing_ms}ms")
                 stt = deepgram.STT(
                     language="zh",  # 使用中文模型（能识别中英文）
                     model="nova-2",  # Nova-2 支持中文
                     interim_results=True,
+                    endpointing_ms=deepgram_endpointing_ms,  # 控制句子长度
                 )
             else:
                 # 单向模式：使用 Nova-3（性能更好）
-                logger.info(f"Deepgram STT: Using unidirectional mode with language: {source_language}")
+                logger.info(f"Deepgram STT: Using unidirectional mode with language: {source_language}, endpointing={deepgram_endpointing_ms}ms")
                 stt = deepgram.STT(
                     language=source_language,
                     model="nova-3",  # Nova-3 性能更好
                     interim_results=True,
+                    endpointing_ms=deepgram_endpointing_ms,  # 控制句子长度
                 )
         
         super().__init__(
-            instructions="You are a real-time translation assistant using STT and Google Translate.",
+            instructions="You are a real-time translation assistant using multi-provider STT and Google Translate.",
             stt=stt,
             allow_interruptions=False,
             vad=silero.VAD.load(
@@ -546,7 +562,7 @@ class DeepgramTranslationAgent(Agent):
         )
         
         logger.info(
-            "DeepgramTranslationAgent initialized: stt_provider=%s, %s -> %s, debounce_ms=%s, debounce_enabled=%s, "
+            "TranslationAgent initialized: stt_provider=%s, %s -> %s, debounce_ms=%s, debounce_enabled=%s, "
             "batch_size=%s, batch_timeout_ms=%s, sync_display_mode=%s, bidirectional_mode=%s",
             stt_provider,
             source_language,
@@ -1011,7 +1027,7 @@ async def entrypoint(ctx: JobContext):
         stt_provider = "deepgram"
     
     # 创建带上下文的 agent
-    agent = DeepgramTranslationAgent(
+    agent = TranslationAgent(
         ctx=ctx,
         source_language=source_language,
         target_language=target_language,
