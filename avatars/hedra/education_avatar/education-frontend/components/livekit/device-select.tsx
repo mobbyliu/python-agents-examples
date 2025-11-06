@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { useEffect } from 'react';
 
 type DeviceSelectProps = React.ComponentProps<typeof SelectTrigger> & {
   kind: MediaDeviceKind;
@@ -61,6 +62,26 @@ export function DeviceSelect({
     requestPermissions,
     onError,
   });
+
+  // Automatically select the first non-BlackHole device if current device is BlackHole
+  useEffect(() => {
+    if (devices.length > 0 && activeDeviceId) {
+      const currentDevice = devices.find((d) => d.deviceId === activeDeviceId);
+      const isBlackHole = currentDevice?.label.toLowerCase().includes('blackhole');
+      
+      if (isBlackHole) {
+        // Find the first non-BlackHole device
+        const preferredDevice = devices.find(
+          (device) => !device.label.toLowerCase().includes('blackhole')
+        );
+        
+        if (preferredDevice && preferredDevice.deviceId !== activeDeviceId) {
+          setActiveMediaDevice(preferredDevice.deviceId);
+        }
+      }
+    }
+  }, [devices, activeDeviceId, setActiveMediaDevice]);
+
   return (
     <Select value={activeDeviceId} onValueChange={setActiveMediaDevice}>
       <SelectTrigger className={cn(selectVariants({ size }), props.className)}>

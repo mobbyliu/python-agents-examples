@@ -271,8 +271,6 @@ class TranslationDisplayAgent(Agent):
         return process_stream()
 
 async def entrypoint(ctx: JobContext):
-    await ctx.connect()
-    
     # Create agent with context for RPC access
     agent = TranslationDisplayAgent(ctx=ctx)
     session = AgentSession()

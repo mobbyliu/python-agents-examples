@@ -1042,8 +1042,11 @@ async def entrypoint(ctx: JobContext):
     
     session = AgentSession()
     
-    # 先连接房间
-    await ctx.connect()
+    # 启动 session（会自动连接房间并初始化 pre-connect audio buffer）
+    await session.start(
+        agent=agent,
+        room=ctx.room
+    )
     
     # 注册 RPC 方法：接收前端的语言配置更新
     async def handle_update_config(data: rtc.RpcInvocationData) -> str:
@@ -1062,12 +1065,6 @@ async def entrypoint(ctx: JobContext):
     ctx.room.local_participant.register_rpc_method(
         "update_translation_config",
         handle_update_config
-    )
-    
-    # 在连接后启动 session（处理音频）
-    await session.start(
-        agent=agent,
-        room=ctx.room
     )
 
 
